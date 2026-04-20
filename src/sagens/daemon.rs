@@ -15,6 +15,8 @@ use crate::sagens::recovery::{
 };
 use crate::{Result, SandboxError, serve_box_api_websocket};
 
+const DAEMON_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 pub async fn run_foreground(paths: &SagensPaths, host_binary: &Path) -> Result<()> {
     validate_host_process_binary(host_binary)?;
     let config = build_runtime_config_for_endpoint(&paths.state_dir, &paths.endpoint)?;
@@ -147,7 +149,7 @@ async fn ensure_user_config(paths: &SagensPaths) -> Result<UserConfig> {
 }
 
 async fn wait_for_daemon(config: &UserConfig) -> Result<()> {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + DAEMON_WAIT_TIMEOUT;
     loop {
         match healthy_client(config).await {
             Ok(_) => return Ok(()),
@@ -165,7 +167,7 @@ async fn wait_for_daemon(config: &UserConfig) -> Result<()> {
 }
 
 async fn wait_for_daemon_shutdown(config: &UserConfig) -> Result<()> {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + DAEMON_WAIT_TIMEOUT;
     loop {
         match crate::BoxApiClient::connect(config).await {
             Ok(_) if std::time::Instant::now() >= deadline => {

@@ -107,22 +107,44 @@ assert_equals() {
   fi
 }
 
-extract_json_field() {
-  local file="$1"
-  local key="$2"
-  sed -nE "s/^[[:space:]]*\"${key}\":[[:space:]]*\"([^\"]+)\"[[:space:]]*,?[[:space:]]*$/\\1/p" "$file" | head -n1
+extract_first_uuid() {
+  python3 - <<'PY'
+import re
+import sys
+
+text = sys.stdin.read()
+match = re.search(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b", text)
+if match:
+    print(match.group(0))
+PY
+}
+
+extract_table_value() {
+  local label="$1"
+  python3 - "$label" <<'PY'
+import re
+import sys
+
+label = sys.argv[1]
+text = re.sub(r"\x1b\[[0-9;]*m", "", sys.stdin.read())
+for raw_line in text.splitlines():
+    parts = [part.strip() for part in re.split(r"[│|]", raw_line) if part.strip()]
+    if len(parts) >= 2 and parts[0] == label:
+        print(parts[1])
+        break
+PY
 }
 
 START_OUT="$(run_sagens start)"
 assert_contains "$START_OUT" "daemon "
 
 HELP_OUT="$(run_sagens)"
-assert_contains "$HELP_OUT" "usage: sagens"
+assert_contains "$HELP_OUT" "sagens <command> [args]"
 
 LIST_OUT="$(run_sagens box list)"
-assert_equals "$LIST_OUT" ""
+assert_contains "$LIST_OUT" "No BOXes found."
 
-BOX_ID="$(run_sagens box new | tr -d '[:space:]')"
+BOX_ID="$(run_sagens box new | extract_first_uuid)"
 if [[ ! "$BOX_ID" =~ ^[0-9a-fA-F-]{36}$ ]]; then
   echo "invalid box id: $BOX_ID" >&2
   exit 1
@@ -130,10 +152,11 @@ fi
 
 PS_OUT="$(run_sagens box ps)"
 assert_contains "$PS_OUT" "$BOX_ID"
-assert_contains "$PS_OUT" "created"
+assert_contains "$PS_OUT" "CREATED"
 
 START_BOX_OUT="$(run_sagens box start "$BOX_ID")"
-assert_contains "$START_BOX_OUT" "running"
+assert_contains "$START_BOX_OUT" "$BOX_ID"
+assert_contains "$START_BOX_OUT" "RUNNING"
 
 BASH_OUT="$(run_sagens box exec "$BOX_ID" bash "echo hello-from-bash")"
 assert_contains "$BASH_OUT" "hello-from-bash"
@@ -181,15 +204,19 @@ LS_OUT="$(run_sagens box fs "$BOX_ID" ls /workspace)"
 assert_contains "$LS_OUT" "note.txt"
 
 DIFF_OUT="$(run_sagens box fs "$BOX_ID" diff)"
-assert_contains "$DIFF_OUT" $'A\tnote.txt'
+assert_contains "$DIFF_OUT" "A"
+assert_contains "$DIFF_OUT" "note.txt"
 
-run_sagens admin add > "$ROOT_TMP/admin-add.json"
-ADMIN_UUID="$(extract_json_field "$ROOT_TMP/admin-add.json" "admin_uuid")"
-ADMIN_TOKEN="$(extract_json_field "$ROOT_TMP/admin-add.json" "admin_token")"
-ADMIN_ENDPOINT="$(extract_json_field "$ROOT_TMP/admin-add.json" "endpoint")"
+ADMIN_ADD_OUT="$(run_sagens admin add)"
+assert_contains "$ADMIN_ADD_OUT" "Admin UUID"
+assert_contains "$ADMIN_ADD_OUT" "Admin token"
+assert_contains "$ADMIN_ADD_OUT" "Endpoint"
+ADMIN_UUID="$(printf '%s\n' "$ADMIN_ADD_OUT" | extract_table_value "Admin UUID")"
+ADMIN_TOKEN="$(printf '%s\n' "$ADMIN_ADD_OUT" | extract_table_value "Admin token")"
+ADMIN_ENDPOINT="$(printf '%s\n' "$ADMIN_ADD_OUT" | extract_table_value "Endpoint")"
 if [[ -z "$ADMIN_UUID" || -z "$ADMIN_TOKEN" || -z "$ADMIN_ENDPOINT" ]]; then
   echo "failed to parse admin add output" >&2
-  cat "$ROOT_TMP/admin-add.json" >&2
+  printf '%s\n' "$ADMIN_ADD_OUT" >&2
   exit 1
 fi
 
@@ -213,10 +240,11 @@ RM_OUT="$(run_sagens box rm "$BOX_ID")"
 assert_contains "$RM_OUT" "removed"
 
 FINAL_LIST_OUT="$(run_sagens box list)"
-assert_equals "$FINAL_LIST_OUT" ""
+assert_contains "$FINAL_LIST_OUT" "No BOXes found."
 
 REMOVE_ME_OUT="$(run_sagens_with_config "$SECOND_CONFIG_JSON" admin remove me)"
-assert_contains "$REMOVE_ME_OUT" "admin removed"
+assert_contains "$REMOVE_ME_OUT" "admin"
+assert_contains "$REMOVE_ME_OUT" "removed"
 
 QUIT_OUT="$(run_sagens quit)"
 assert_contains "$QUIT_OUT" "daemon stopped"
