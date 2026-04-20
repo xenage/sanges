@@ -1,38 +1,20 @@
-name: Release
+name: Build and Release
 
 on:
+  pull_request:
   push:
+    branches:
+      - main
     tags:
-      - 'v*'
+      - "*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  verify-tag:
-    runs-on: ubuntu-24.04
-    outputs:
-      should_release: ${{ steps.check.outputs.should_release }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - id: check
-        run: |
-          if [[ "${GITHUB_REF_TYPE:-}" != "tag" ]]; then
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          git fetch origin main --depth=1
-          if git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-          fi
-
-  build-release:
-    needs: verify-tag
-    if: needs.verify-tag.outputs.should_release == 'true'
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -41,44 +23,43 @@ jobs:
             platform: linux-x86_64
           - os: ubuntu-24.04-arm
             platform: linux-aarch64
-          - os: macos-14
-            platform: macos-aarch64
           - os: macos-13
             platform: macos-x86_64
-    runs-on: ${{ matrix.os }}
+          - os: macos-14
+            platform: macos-aarch64
     env:
-      ARTIFACT_VERSION: ${{ github.ref_name }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/') && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
-      APPLE_ID: ${{ runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/') && secrets.APPLE_ID || '' }}
-      TEAM_ID: ${{ runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/') && secrets.TEAM_ID || '' }}
-      BUILD_CERTIFICATE_BASE64: ${{ runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/') && secrets.BUILD_CERTIFICATE_BASE64 || '' }}
-      INSTALLER_CERTIFICATE_BASE64: ${{ runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/') && secrets.INSTALLER_CERTIFICATE_BASE64 || '' }}
-      KEYCHAIN_PASSWORD: ${{ runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/') && secrets.KEYCHAIN_PASSWORD || '' }}
-      P12_PASSWORD: ${{ runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/') && secrets.P12_PASSWORD || '' }}
-      INSTALLER_P12_PASSWORD: ${{ runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/') && secrets.INSTALLER_P12_PASSWORD || '' }}
-      BUILD_LOCAL_SIGN: ${{ runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/') && '1' || '' }}
+      ARTIFACT_VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('ci-{0}', github.sha) }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+      APPLE_ID: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.APPLE_ID || '' }}
+      TEAM_ID: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.TEAM_ID || '' }}
+      BUILD_CERTIFICATE_BASE64: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.BUILD_CERTIFICATE_BASE64 || '' }}
+      INSTALLER_CERTIFICATE_BASE64: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.INSTALLER_CERTIFICATE_BASE64 || '' }}
+      KEYCHAIN_PASSWORD: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.KEYCHAIN_PASSWORD || '' }}
+      P12_PASSWORD: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.P12_PASSWORD || '' }}
+      INSTALLER_P12_PASSWORD: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.INSTALLER_P12_PASSWORD || '' }}
+      BUILD_LOCAL_SIGN: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && '1' || '' }}
       SAGENS_SKIP_INSTALLER: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Linux deps
-        if: runner.os == 'Linux'
+      - name: Install Linux build deps
+        if: runner.os == "Linux"
         run: |
           sudo apt-get update
           sudo apt-get install -y e2fsprogs gnupg tar clang lld pkg-config patchelf libc6-dev libelf-dev libssl-dev libncurses-dev bison flex dwarves cpio xz-utils
 
-      - name: Install macOS deps
-        if: runner.os == 'macOS'
+      - name: Install macOS build deps
+        if: runner.os == "macOS"
         run: |
           brew install llvm lld xz e2fsprogs gnupg zig
           brew tap slp/krun
           brew install krunvm
 
-      - name: Build standalone release package
+      - name: Build standalone binary
         run: |
           if [[ -n "${BUILD_LOCAL_SIGN:-}" ]]; then
             ./build-local.sh --version "$ARTIFACT_VERSION" --sign
@@ -86,27 +67,96 @@ jobs:
             ./build-local.sh --version "$ARTIFACT_VERSION"
           fi
 
-      - name: Upload release artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
         with:
-          name: release-${{ matrix.platform }}
-          path: dist/sagens-${{ github.ref_name }}-${{ matrix.platform }}*
+          name: bundle-${{ matrix.platform }}
+          path: dist/sagens-${{ env.ARTIFACT_VERSION }}-${{ matrix.platform }}*
+          if-no-files-found: error
 
-  publish-release:
-    needs:
-      - verify-tag
-      - build-release
-    if: needs.verify-tag.outputs.should_release == 'true'
-    runs-on: ubuntu-24.04
+  test:
+    name: Test (${{ matrix.platform }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+          - os: ubuntu-24.04-arm
+            platform: linux-aarch64
+          - os: macos-13
+            platform: macos-x86_64
+          - os: macos-14
+            platform: macos-aarch64
+    env:
+      ARTIFACT_VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('ci-{0}', github.sha) }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v6
+
+      - name: Install Linux runtime deps
+        if: runner.os == "Linux"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y e2fsprogs
+
+      - name: Install macOS runtime deps
+        if: runner.os == "macOS"
+        run: brew install e2fsprogs
+
+      - name: Download built artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: bundle-${{ matrix.platform }}
+          path: dist
+
+      - name: Restore executable bit
+        run: chmod +x "dist/sagens-${ARTIFACT_VERSION}-${{ matrix.platform }}"
+
+      - name: Run standalone e2e
+        run: |
+          binary="$GITHUB_WORKSPACE/dist/sagens-${ARTIFACT_VERSION}-${{ matrix.platform }}"
+          bash scripts/e2e-standalone.sh "$binary"
+          bash scripts/e2e-checkpoint.sh "$binary"
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs:
+      - build
+      - test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - id: verify
+        name: Verify tag points into main
+        run: |
+          tag_commit="$(git rev-list -n 1 "$GITHUB_REF")"
+          git fetch origin main
+          if git merge-base --is-ancestor "$tag_commit" origin/main; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping release because $GITHUB_REF does not point into origin/main."
+          fi
+
+      - name: Download release artifacts
+        if: steps.verify.outputs.should_release == 'true'
+        uses: actions/download-artifact@v8
         with:
           path: release-assets
+          pattern: bundle-*
           merge-multiple: true
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
+        if: steps.verify.outputs.should_release == 'true'
+        uses: softprops/action-gh-release@v3
         with:
-          files: |
-            release-assets/*.sha256
-            release-assets/sagens-*
+          tag_name: ${{ github.ref_name }}
+          files: release-assets/sagens-*

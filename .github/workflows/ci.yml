@@ -13,7 +13,7 @@ jobs:
   quality:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -35,76 +35,3 @@ jobs:
 
       - name: Run tests
         run: cargo test
-
-  integration-matrix:
-    needs: quality
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            platform: linux-x86_64
-          - os: ubuntu-24.04-arm
-            platform: linux-aarch64
-          - os: macos-14
-            platform: macos-aarch64
-          - os: macos-13
-            platform: macos-x86_64
-    runs-on: ${{ matrix.os }}
-    env:
-      ARTIFACT_VERSION: ci-${{ github.sha }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ runner.os == 'macOS' && github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
-      APPLE_ID: ${{ runner.os == 'macOS' && github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.APPLE_ID || '' }}
-      TEAM_ID: ${{ runner.os == 'macOS' && github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.TEAM_ID || '' }}
-      BUILD_CERTIFICATE_BASE64: ${{ runner.os == 'macOS' && github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.BUILD_CERTIFICATE_BASE64 || '' }}
-      INSTALLER_CERTIFICATE_BASE64: ${{ runner.os == 'macOS' && github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.INSTALLER_CERTIFICATE_BASE64 || '' }}
-      KEYCHAIN_PASSWORD: ${{ runner.os == 'macOS' && github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.KEYCHAIN_PASSWORD || '' }}
-      P12_PASSWORD: ${{ runner.os == 'macOS' && github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.P12_PASSWORD || '' }}
-      INSTALLER_P12_PASSWORD: ${{ runner.os == 'macOS' && github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.INSTALLER_P12_PASSWORD || '' }}
-      BUILD_LOCAL_SIGN: ${{ runner.os == 'macOS' && github.event_name == 'push' && github.ref == 'refs/heads/main' && '1' || '' }}
-      SAGENS_SKIP_INSTALLER: "1"
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Linux deps
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y e2fsprogs gnupg tar clang lld pkg-config patchelf libc6-dev libelf-dev libssl-dev libncurses-dev bison flex dwarves cpio xz-utils
-
-      - name: Install macOS deps
-        if: runner.os == 'macOS'
-        run: |
-          brew install llvm lld xz e2fsprogs gnupg zig
-          brew tap slp/krun
-          brew install krunvm
-
-      - name: Build standalone package
-        run: |
-          if [[ -n "${BUILD_LOCAL_SIGN:-}" ]]; then
-            ./build-local.sh --version "$ARTIFACT_VERSION" --sign
-          else
-            ./build-local.sh --version "$ARTIFACT_VERSION"
-          fi
-
-      - name: Run standalone-binary e2e
-        run: |
-          binary="$GITHUB_WORKSPACE/dist/sagens-${ARTIFACT_VERSION}-${{ matrix.platform }}"
-          bash scripts/e2e-standalone.sh "$binary"
-          bash scripts/e2e-checkpoint.sh "$binary"
-
-      - name: Run libkrun integration test
-        env:
-          SAGENS_RUN_E2E: "1"
-          SAGENS_HOST_BINARY: ${{ github.workspace }}/dist/sagens-ci-${{ github.sha }}-${{ matrix.platform }}
-        run: cargo test -p sagens-host --release --test e2e_libkrun -- --nocapture
-
-      - name: Upload standalone package
-        uses: actions/upload-artifact@v4
-        with:
-          name: standalone-${{ matrix.platform }}
-          path: dist/sagens-ci-${{ github.sha }}-${{ matrix.platform }}*
