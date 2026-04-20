@@ -13,7 +13,7 @@ jobs:
   quality:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -64,7 +64,7 @@ jobs:
       BUILD_LOCAL_SIGN: ${{ runner.os == 'macOS' && github.event_name == 'push' && github.ref == 'refs/heads/main' && '1' || '' }}
       SAGENS_SKIP_INSTALLER: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
 
