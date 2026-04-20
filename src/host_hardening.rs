@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use uuid::Uuid;
 
@@ -60,7 +60,7 @@ pub async fn attach_backend_process(
 }
 
 async fn attach_to_cgroup(
-    parent: &PathBuf,
+    parent: &Path,
     sandbox_id: Uuid,
     pid: u32,
     policy: &SandboxPolicy,

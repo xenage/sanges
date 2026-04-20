@@ -13,8 +13,8 @@ use anyhow::{Context, ensure};
 
 use super::cargo_ops::{cargo_build, run};
 use super::types::{
-    GUEST_AGENT_MANIFEST, Platform, PlatformOs, Profile, ResolvedArtifacts, RuntimeBundle,
-    RuntimeBundleSource, absolutize, target_root,
+    GUEST_AGENT_MANIFEST, Platform, PlatformArch, PlatformOs, Profile, ResolvedArtifacts,
+    RuntimeBundle, RuntimeBundleSource, absolutize, target_root,
 };
 use source_build::{
     macos_cc_linux_value, preferred_host_clang, preferred_ld_lld, preferred_libclang_dir,
@@ -286,6 +286,9 @@ fn build_libkrun_from_source(
         PlatformOs::Linux => make.arg("BLK=1"),
     };
     if platform.os == PlatformOs::Macos {
+        if let Some(arch) = upstream_libkrun_arch(platform) {
+            make.arg(format!("ARCH={arch}"));
+        }
         let clang = preferred_host_clang().context(
             "missing clang for libkrun source build on macOS; install Xcode command line tools or Homebrew llvm",
         )?;
@@ -335,6 +338,18 @@ fn build_libkrun_from_source(
         })?;
     }
     Ok(())
+}
+
+fn upstream_libkrun_arch(platform: Platform) -> Option<&'static str> {
+    if platform.os != PlatformOs::Macos {
+        return None;
+    }
+    Some(match platform.arch {
+        // Upstream Makefile uses ARCH in Debian and FreeBSD download URLs.
+        // Their archive naming is amd64, while our host arch remains x86_64.
+        PlatformArch::X86_64 => "amd64",
+        PlatformArch::Aarch64 => "arm64",
+    })
 }
 
 fn find_built_lib(target_dir: &Path, platform: Platform) -> anyhow::Result<PathBuf> {

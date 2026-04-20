@@ -147,6 +147,7 @@ fn should_use_self_runner_on_macos() -> bool {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn is_sagens_self_runner_binary(stem: &str) -> bool {
     stem == "sagens" || stem.starts_with("sagens-")
 }

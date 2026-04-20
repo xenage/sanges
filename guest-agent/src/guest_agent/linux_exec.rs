@@ -224,10 +224,10 @@ fn apply_process_limits(
     )
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
 type RlimitResource = libc::__rlimit_resource_t;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(any(not(target_os = "linux"), not(target_env = "gnu")))]
 type RlimitResource = libc::c_int;
 
 fn apply_rlimit(resource: RlimitResource, value: libc::rlim_t, label: &str) -> std::io::Result<()> {
