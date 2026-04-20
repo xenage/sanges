@@ -41,6 +41,9 @@ pub(super) fn patch_libkrun_sources(
         if let Some(guard) = patch_libkrun_arch_x86_64_modules(libkrun_root)? {
             guards.push(guard);
         }
+        if let Some(guard) = patch_libkrun_cpuid_dependencies(libkrun_root)? {
+            guards.push(guard);
+        }
     }
     Ok(SourcePatchGuards { _guards: guards })
 }
@@ -279,6 +282,19 @@ fn patch_libkrun_arch_x86_64_modules(
                 "#[cfg(target_os = \"linux\")]\npub mod regs;",
             ),
         ],
+    )
+}
+
+fn patch_libkrun_cpuid_dependencies(
+    libkrun_root: &Path,
+) -> anyhow::Result<Option<SourcePatchGuard>> {
+    patch_libkrun_file(
+        libkrun_root,
+        ["src", "cpuid", "Cargo.toml"],
+        &[(
+            "[dependencies]\nvmm-sys-util = \"0.14\"\n\n[target.'cfg(target_os = \"linux\")'.dependencies]\nkvm-bindings = { version = \"0.12\", features = [\"fam-wrappers\"] }\nkvm-ioctls = \"0.22\"",
+            "[dependencies]\nkvm-bindings = { version = \"0.12\", features = [\"fam-wrappers\"] }\nvmm-sys-util = \"0.14\"\n\n[target.'cfg(target_os = \"linux\")'.dependencies]\nkvm-ioctls = \"0.22\"",
+        )],
     )
 }
 
