@@ -1,0 +1,291 @@
+use std::env;
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
+#[cfg(target_os = "macos")]
+use std::process::Command;
+use std::time::Duration;
+
+use crate::config::IsolationMode;
+use crate::{
+    ArtifactBundle, ControlPlaneConfig, GuestConfig, GuestKernelFormat, HardeningConfig,
+    LifecycleConfig, Result, RuntimeConfig, SandboxError, SandboxPolicy, WorkspaceConfig,
+};
+
+#[derive(Debug, Clone)]
+pub struct SagensPaths {
+    pub state_dir: PathBuf,
+    pub user_config_path: PathBuf,
+    pub endpoint: String,
+    pub pid_path: PathBuf,
+}
+
+pub fn resolve_paths() -> SagensPaths {
+    let state_dir = env::var_os("SAGENS_STATE_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(default_state_dir);
+    let user_config_path = env::var_os("SAGENS_CONFIG")
+        .map(PathBuf::from)
+        .unwrap_or_else(default_user_config_path);
+    let endpoint = env::var("SAGENS_ENDPOINT").unwrap_or_else(|_| default_endpoint());
+    let pid_path = state_dir.join("daemon.pid");
+    SagensPaths {
+        state_dir,
+        user_config_path,
+        endpoint,
+        pid_path,
+    }
+}
+
+pub fn build_runtime_config_for_endpoint(
+    state_dir: &Path,
+    endpoint: &str,
+) -> Result<RuntimeConfig> {
+    Ok(RuntimeConfig {
+        state_dir: state_dir.to_path_buf(),
+        guest: GuestConfig {
+            libkrun_library: required_path(&default_project_artifact_candidates("libkrun")),
+            kernel_image: required_path(&default_project_artifact_candidates("kernel")),
+            kernel_format: parse_kernel_format().unwrap_or_else(|_| default_kernel_format()),
+            rootfs_image: required_path(&default_project_artifact_candidates("rootfs")),
+            firmware: optional_path(&default_project_artifact_candidates("firmware")),
+            guest_agent_path: PathBuf::from("/usr/local/bin/sagens-guest-agent"),
+            guest_vsock_port: env::var("SAGENS_GUEST_VSOCK_PORT")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(11_000),
+            boot_timeout: Duration::from_secs(30),
+            guest_uid: 65_534,
+            guest_gid: 65_534,
+            guest_tmpfs_mib: 256,
+        },
+        workspace: WorkspaceConfig {
+            disk_size_mib: env::var("SAGENS_WORKSPACE_MIB")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(512),
+        },
+        control: ControlPlaneConfig {
+            bind_addr: parse_endpoint_addr(endpoint)?,
+            allow_remote_bind: false,
+        },
+        lifecycle: LifecycleConfig::default(),
+        isolation_mode: parse_isolation_mode()?,
+        hardening: HardeningConfig {
+            enable_landlock: env_flag("SAGENS_ENABLE_LANDLOCK"),
+            cgroup_parent: env::var("SAGENS_CGROUP_PARENT")
+                .ok()
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from),
+            runner_log_limit_bytes: env::var("SAGENS_RUNNER_LOG_LIMIT_BYTES")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(4 * 1024 * 1024),
+        },
+        artifact_bundle: ArtifactBundle {
+            bundle_id: env::var("SAGENS_BUNDLE_ID").unwrap_or_else(|_| "sagens".into()),
+        },
+        default_policy: SandboxPolicy::default(),
+    })
+}
+
+pub fn parse_endpoint_addr(endpoint: &str) -> Result<SocketAddr> {
+    endpoint
+        .strip_prefix("ws://")
+        .ok_or_else(|| SandboxError::invalid(format!("unsupported endpoint {endpoint}")))?
+        .parse()
+        .map_err(|error| {
+            SandboxError::invalid(format!("invalid websocket endpoint {endpoint}: {error}"))
+        })
+}
+
+fn default_state_dir() -> PathBuf {
+    if cfg!(target_os = "macos") {
+        return home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("Library")
+            .join("Application Support")
+            .join("sagens");
+    }
+    if let Some(xdg) = env::var_os("XDG_STATE_HOME").filter(|value| !value.is_empty()) {
+        return PathBuf::from(xdg).join("sagens");
+    }
+    home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".local")
+        .join("state")
+        .join("sagens")
+}
+
+fn default_user_config_path() -> PathBuf {
+    default_config_dir().join("config.json")
+}
+
+fn default_config_dir() -> PathBuf {
+    if cfg!(target_os = "macos") {
+        return home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("Library")
+            .join("Application Support")
+            .join("sagens");
+    }
+    if let Some(xdg) = env::var_os("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
+        return PathBuf::from(xdg).join("sagens");
+    }
+    home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".config")
+        .join("sagens")
+}
+
+fn default_endpoint() -> String {
+    "ws://127.0.0.1:7000".into()
+}
+
+fn required_path(candidates: &[PathBuf]) -> PathBuf {
+    first_existing_path(candidates).unwrap_or_default()
+}
+
+fn optional_path(candidates: &[PathBuf]) -> Option<PathBuf> {
+    first_existing_path(candidates)
+}
+
+fn parse_kernel_format() -> Result<GuestKernelFormat> {
+    match env::var("SAGENS_KERNEL_FORMAT") {
+        Ok(value) if !value.is_empty() => GuestKernelFormat::parse(&value),
+        _ => Ok(default_kernel_format()),
+    }
+}
+
+fn default_kernel_format() -> GuestKernelFormat {
+    if cfg!(target_os = "macos") {
+        GuestKernelFormat::PeGz
+    } else {
+        GuestKernelFormat::Raw
+    }
+}
+
+fn parse_isolation_mode() -> Result<IsolationMode> {
+    match env::var("SAGENS_ISOLATION_MODE") {
+        Ok(value) if !value.trim().is_empty() => match value.trim().to_ascii_lowercase().as_str() {
+            "compat" => Ok(IsolationMode::Compat),
+            "secure" => Ok(IsolationMode::Secure),
+            _ => Err(SandboxError::invalid(format!(
+                "unsupported SAGENS_ISOLATION_MODE: {value}"
+            ))),
+        },
+        _ => Ok(IsolationMode::default_for_host()),
+    }
+}
+
+fn default_project_artifact_candidates(kind: &str) -> Vec<PathBuf> {
+    let root = workspace_root();
+    match (kind, env::consts::OS, env::consts::ARCH) {
+        ("libkrun", "macos", "x86_64") => {
+            vec![root.join("third_party/runtime/macos-x86_64/lib/libkrun.dylib")]
+        }
+        ("libkrun", "macos", "aarch64") => {
+            vec![root.join("third_party/runtime/macos-aarch64/lib/libkrun.dylib")]
+        }
+        ("libkrun", "linux", "aarch64") => {
+            vec![root.join("third_party/runtime/linux-aarch64/lib/libkrun.so")]
+        }
+        ("libkrun", "linux", "x86_64") => {
+            vec![root.join("third_party/runtime/linux-x86_64/lib/libkrun.so")]
+        }
+        ("firmware", "macos", "x86_64") => {
+            vec![root.join("third_party/runtime/macos-x86_64/share/krunkit/KRUN_EFI.silent.fd")]
+        }
+        ("firmware", "macos", "aarch64") => {
+            vec![root.join("third_party/runtime/macos-aarch64/share/krunkit/KRUN_EFI.silent.fd")]
+        }
+        ("kernel", "macos", "x86_64") => {
+            vec![root.join("artifacts/alpine-x86_64/vmlinuz-virt.pe.gz")]
+        }
+        ("kernel", "macos", "aarch64") => {
+            vec![root.join("artifacts/alpine-aarch64/vmlinuz-virt.pe.gz")]
+        }
+        ("kernel", "linux", "aarch64") => vec![root.join("artifacts/alpine-aarch64/vmlinuz-virt")],
+        ("kernel", "linux", "x86_64") => vec![root.join("artifacts/alpine-x86_64/vmlinuz-virt")],
+        ("rootfs", "macos", "x86_64") | ("rootfs", "linux", "x86_64") => {
+            vec![root.join("artifacts/alpine-x86_64/rootfs.raw")]
+        }
+        ("rootfs", "macos", "aarch64") | ("rootfs", "linux", "aarch64") => {
+            vec![root.join("artifacts/alpine-aarch64/rootfs.raw")]
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn workspace_root() -> &'static Path {
+    Path::new(env!("SAGENS_WORKSPACE_ROOT"))
+}
+
+fn first_existing_path(candidates: &[PathBuf]) -> Option<PathBuf> {
+    candidates.iter().find(|path| path.is_file()).cloned()
+}
+
+fn home_dir() -> Option<PathBuf> {
+    env::var_os("HOME").map(PathBuf::from)
+}
+
+fn env_flag(name: &str) -> bool {
+    matches!(
+        env::var(name).ok().as_deref(),
+        Some("1" | "true" | "yes" | "on")
+    )
+}
+
+pub fn validate_host_process_binary(host_binary: &Path) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        validate_macos_host_binary(host_binary)?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn validate_macos_host_binary(host_binary: &Path) -> Result<()> {
+    if !host_binary.is_file() {
+        return Ok(());
+    }
+    let output = Command::new("/usr/bin/codesign")
+        .arg("-dv")
+        .arg("--entitlements")
+        .arg(":-")
+        .arg(host_binary)
+        .output()
+        .map_err(|error| SandboxError::io("running codesign for sagens host binary", error))?;
+    let mut combined = output.stdout;
+    combined.extend_from_slice(&output.stderr);
+    let text = String::from_utf8_lossy(&combined);
+    if has_hypervisor_entitlement(&text) {
+        return Ok(());
+    }
+    Err(SandboxError::invalid(format!(
+        "macOS host binary {} is missing the com.apple.security.hypervisor entitlement; sign it with macos/sagens.entitlements (for example via ./build-local.sh or codesign --force --sign - --entitlements macos/sagens.entitlements --timestamp=none {})",
+        host_binary.display(),
+        host_binary.display(),
+    )))
+}
+
+#[cfg(target_os = "macos")]
+fn has_hypervisor_entitlement(output: &str) -> bool {
+    output.contains("com.apple.security.hypervisor")
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(target_os = "macos")]
+    use super::has_hypervisor_entitlement;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn detects_hypervisor_entitlement_in_codesign_output() {
+        assert!(has_hypervisor_entitlement(
+            r#"<plist><dict><key>com.apple.security.hypervisor</key><true/></dict></plist>"#
+        ));
+        assert!(!has_hypervisor_entitlement(
+            "Executable=/tmp/sagens\nSignature=adhoc\n"
+        ));
+    }
+}

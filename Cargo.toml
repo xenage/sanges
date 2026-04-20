@@ -1,0 +1,54 @@
+[workspace]
+members = [
+    "crates/sagens-box-api",
+    "crates/sagens-domain",
+    "crates/sagens-guest-agent",
+    "crates/sagens-guest-contract",
+    "crates/sagens-host",
+    "crates/sagens-libkrun",
+    "xtask",
+]
+default-members = [
+    "crates/sagens-host",
+    "crates/sagens-guest-agent",
+    "xtask",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+license = "Apache-2.0"
+repository = "https://github.com/tvorogme/sagens"
+homepage = "https://github.com/tvorogme/sagens"
+publish = false
+
+[workspace.dependencies]
+anyhow = "1.0.102"
+async-trait = "0.1.89"
+base64 = "0.22.1"
+flate2 = "1.1.9"
+futures-util = "0.3.32"
+libc = "0.2.185"
+libloading = "0.9.0"
+pyo3 = { version = "0.28.3", features = ["abi3-py311", "extension-module"] }
+reqwest = { version = "0.13.2", default-features = false, features = ["blocking", "rustls"] }
+sequoia-openpgp = { version = "2.2.0", default-features = false, features = ["compression", "crypto-rust", "allow-experimental-crypto", "allow-variable-time-crypto"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+sha2 = "0.11.0"
+tar = "0.4.45"
+tempfile = "3.27.0"
+thiserror = "2.0.18"
+tokio = { version = "1.52.1", features = ["fs", "io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }
+tokio-tungstenite = "0.29.0"
+tokio-vsock = "0.7.2"
+uuid = { version = "1.23.1", features = ["serde", "v4"] }
+zstd = "0.13.3"
+
+sagens-box-api = { path = "crates/sagens-box-api" }
+sagens-domain = { path = "crates/sagens-domain" }
+sagens-guest-contract = { path = "crates/sagens-guest-contract" }
+sagens-host = { path = "crates/sagens-host" }
+sagens-libkrun = { path = "crates/sagens-libkrun" }

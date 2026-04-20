@@ -1,0 +1,92 @@
+use std::path::{Path, PathBuf};
+
+use tokio::fs;
+
+use crate::backend::BackendLaunchRequest;
+use crate::config::{GuestKernelFormat, IsolationMode};
+use crate::{Result, SandboxError};
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LibkrunRunnerConfig {
+    pub library_path: PathBuf,
+    pub kernel_image: PathBuf,
+    pub kernel_format: GuestKernelFormat,
+    pub rootfs_image: PathBuf,
+    pub workspace_image: PathBuf,
+    pub runtime_dir: PathBuf,
+    pub console_output_path: PathBuf,
+    pub firmware: Option<PathBuf>,
+    pub guest_agent_path: PathBuf,
+    pub cpu_cores: u32,
+    pub memory_mb: u32,
+    pub tmpfs_mib: u32,
+    pub max_processes: u32,
+    pub network_enabled: bool,
+    pub guest_uid: u32,
+    pub guest_gid: u32,
+    pub guest_vsock_port: u32,
+    pub vsock_socket: PathBuf,
+    pub isolation_mode: IsolationMode,
+    pub runner_log_limit_bytes: u64,
+}
+
+impl LibkrunRunnerConfig {
+    pub fn kernel_cmdline(&self) -> String {
+        let max_open_files = self.max_processes.saturating_mul(16).clamp(256, 4096);
+        format!(
+            "console=hvc0 root=/dev/vda1 ro rootfstype=ext4 rootwait loglevel=8 ignore_loglevel sandbox.workspace_device=/dev/vdb sandbox.tmpfs_mib={} sandbox.uid={} sandbox.gid={} sandbox.max_processes={} sandbox.max_open_files={} sandbox.max_file_size_bytes={} sandbox.rpc_port={} sandbox.network_enabled={} panic=-1",
+            self.tmpfs_mib,
+            self.guest_uid,
+            self.guest_gid,
+            self.max_processes,
+            max_open_files,
+            16 * 1024 * 1024u64,
+            self.guest_vsock_port,
+            if self.network_enabled { 1 } else { 0 },
+        )
+    }
+}
+
+pub fn build_runner_config(request: &BackendLaunchRequest) -> LibkrunRunnerConfig {
+    LibkrunRunnerConfig {
+        library_path: request.guest.libkrun_library.clone(),
+        kernel_image: request.guest.kernel_image.clone(),
+        kernel_format: request.guest.kernel_format,
+        rootfs_image: request.guest.rootfs_image.clone(),
+        workspace_image: request.workspace.disk_path.clone(),
+        runtime_dir: request.run_layout.runtime_dir.clone(),
+        console_output_path: request.run_layout.guest_console_log.clone(),
+        firmware: request.guest.firmware.clone(),
+        guest_agent_path: request.guest.guest_agent_path.clone(),
+        cpu_cores: request.policy.cpu_cores,
+        memory_mb: request.policy.memory_mb,
+        tmpfs_mib: request.guest.guest_tmpfs_mib,
+        max_processes: request.policy.max_processes,
+        network_enabled: request.policy.network_enabled,
+        guest_uid: request.guest.guest_uid,
+        guest_gid: request.guest.guest_gid,
+        guest_vsock_port: request.guest.guest_vsock_port,
+        vsock_socket: request.run_layout.vsock_socket.clone(),
+        isolation_mode: request.isolation_mode,
+        runner_log_limit_bytes: request.hardening.runner_log_limit_bytes,
+    }
+}
+
+pub async fn write_debug_runner_config(path: &Path, value: &LibkrunRunnerConfig) -> Result<()> {
+    write_json(path, value).await
+}
+
+pub fn read_runner_config(path: &Path) -> Result<LibkrunRunnerConfig> {
+    let bytes = std::fs::read(path)
+        .map_err(|error| SandboxError::io("reading libkrun runner config", error))?;
+    serde_json::from_slice(&bytes)
+        .map_err(|error| SandboxError::json("decoding libkrun runner config", error))
+}
+
+async fn write_json(path: &Path, value: &LibkrunRunnerConfig) -> Result<()> {
+    let bytes = serde_json::to_vec_pretty(value)
+        .map_err(|error| SandboxError::json("encoding libkrun runner config", error))?;
+    fs::write(path, bytes)
+        .await
+        .map_err(|error| SandboxError::io("writing libkrun runner config", error))
+}

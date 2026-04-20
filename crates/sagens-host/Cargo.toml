@@ -1,0 +1,59 @@
+[package]
+name = "sagens-host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Internal-first host runtime and product binaries for sagens."
+readme = "../../README.md"
+repository.workspace = true
+homepage.workspace = true
+publish.workspace = true
+build = "../../build.rs"
+
+[lib]
+name = "sagens_host"
+path = "../../src/lib.rs"
+
+[[bin]]
+name = "sagens"
+path = "../../src/bin/sagens.rs"
+
+[[bin]]
+name = "build-alpine-guest"
+path = "../../src/bin/build-alpine-guest.rs"
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+base64.workspace = true
+flate2.workspace = true
+futures-util.workspace = true
+libloading.workspace = true
+reqwest.workspace = true
+sequoia-openpgp.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tar.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+uuid.workspace = true
+zstd.workspace = true
+sagens-domain.workspace = true
+sagens-guest-contract.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+tokio-vsock.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[build-dependencies]
+serde.workspace = true
+serde_json.workspace = true
+zstd.workspace = true

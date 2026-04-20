@@ -1,0 +1,69 @@
+# OS / editor noise
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Rust / cargo
+target/
+/target/
+**/*.rs.bk
+
+# Build outputs and local bundles
+/dist/
+/artifacts/
+/bundles/
+/release-assets/
+/third_party/runtime/*
+!/third_party/runtime/README.md
+
+# Local runtime and packaging caches
+/.box-artifacts/
+/.e2e-artifacts/
+/.e2e-wheelhouse/
+/.tmp/
+/.toolchain/
+/.vendor/
+/.cache/
+/.build-local-target/
+
+# Python helper debris
+__pycache__/
+*.py[cod]
+.venv/
+/python/src/sagens/*.so
+/python/src/sagens/*.dylib
+/python/src/sagens/*.pyd
+
+# Logs / temp files
+*.log
+*.tmp
+*.pid
+*.pid.lock
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Test / coverage
+/.coverage
+/coverage/
+/htmlcov/
+/junit.xml
+/test-results/
+
+# Generated docs / archives
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.xz
+*.zst

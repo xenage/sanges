@@ -1,0 +1,15 @@
+[package]
+name = "sagens-domain"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Shared product interfaces and capability boundaries for sagens."
+readme = "../../README.md"
+repository.workspace = true
+homepage.workspace = true
+publish.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+uuid.workspace = true

@@ -1,0 +1,15 @@
+sagens
+Copyright 2026 Andrey Tvorozhkov
+
+This repository contains first-party code released under the Apache License 2.0
+and vendors or redistributes third-party components used for runtime provenance,
+rebuild workflows, and release artifacts.
+
+See:
+
+- LICENSE
+- THIRD_PARTY_LICENSES.md
+- third_party/upstream/
+
+Generated runtime bundles under third_party/runtime/ are build outputs, not the
+source-of-truth location for upstream provenance.
