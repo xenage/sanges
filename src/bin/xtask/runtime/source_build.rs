@@ -28,14 +28,19 @@ pub(super) fn patch_libkrun_sources(
     platform: Platform,
 ) -> anyhow::Result<SourcePatchGuards> {
     let mut guards = Vec::new();
-    if let Some(guard) = match platform {
+    if matches!(
+        platform,
         Platform {
             os: PlatformOs::Macos,
             arch: PlatformArch::X86_64,
-        } => patch_libkrun_worker_message(libkrun_root)?,
-        _ => None,
-    } {
-        guards.push(guard);
+        }
+    ) {
+        if let Some(guard) = patch_libkrun_worker_message(libkrun_root)? {
+            guards.push(guard);
+        }
+        if let Some(guard) = patch_libkrun_arch_x86_64_modules(libkrun_root)? {
+            guards.push(guard);
+        }
     }
     Ok(SourcePatchGuards { _guards: guards })
 }
@@ -188,19 +193,59 @@ fn xcrun_find(tool: &str) -> Option<PathBuf> {
 }
 
 fn patch_libkrun_worker_message(libkrun_root: &Path) -> anyhow::Result<Option<SourcePatchGuard>> {
-    let path = libkrun_root
-        .join("src")
-        .join("utils")
-        .join("src")
-        .join("worker_message.rs");
+    patch_libkrun_file(
+        libkrun_root,
+        ["src", "utils", "src", "worker_message.rs"],
+        &[(
+            "#[cfg(target_arch = \"x86_64\")]",
+            "#[cfg(all(target_os = \"linux\", target_arch = \"x86_64\"))]",
+        )],
+    )
+}
+
+fn patch_libkrun_arch_x86_64_modules(
+    libkrun_root: &Path,
+) -> anyhow::Result<Option<SourcePatchGuard>> {
+    patch_libkrun_file(
+        libkrun_root,
+        ["src", "arch", "src", "x86_64", "mod.rs"],
+        &[
+            ("mod gdt;", "#[cfg(target_os = \"linux\")]\nmod gdt;"),
+            (
+                "pub mod interrupts;",
+                "#[cfg(target_os = \"linux\")]\npub mod interrupts;",
+            ),
+            (
+                "pub mod msr;",
+                "#[cfg(target_os = \"linux\")]\npub mod msr;",
+            ),
+            (
+                "pub mod regs;",
+                "#[cfg(target_os = \"linux\")]\npub mod regs;",
+            ),
+        ],
+    )
+}
+
+fn patch_libkrun_file<const N: usize>(
+    libkrun_root: &Path,
+    relative_path: [&str; N],
+    replacements: &[(&str, &str)],
+) -> anyhow::Result<Option<SourcePatchGuard>> {
+    let path = relative_path
+        .into_iter()
+        .fold(libkrun_root.to_path_buf(), |path, component| {
+            path.join(component)
+        });
     let original =
         fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-    let old = "#[cfg(target_arch = \"x86_64\")]";
-    let new = "#[cfg(all(target_os = \"linux\", target_arch = \"x86_64\"))]";
-    if !original.contains(old) {
+    let mut updated = original.clone();
+    for (old, new) in replacements {
+        updated = updated.replace(old, new);
+    }
+    if updated == original {
         return Ok(None);
     }
-    let updated = original.replace(old, new);
     fs::write(&path, updated).with_context(|| format!("writing {}", path.display()))?;
     Ok(Some(SourcePatchGuard { path, original }))
 }
