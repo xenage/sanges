@@ -20,7 +20,7 @@ pub(super) fn build_macos_x86_64_hvf_runtime(
     fs::create_dir_all(&share_dir).with_context(|| format!("creating {}", share_dir.display()))?;
     copy_macos_runtime_firmware(root, &share_dir)?;
     create_macos_runtime_marker(&lib_dir.join("libkrun.dylib"))?;
-    bundle_macos_qemu_runtime(&lib_dir)?;
+    bundle_macos_qemu_runtime(root, &lib_dir)?;
     Ok(())
 }
 
@@ -106,7 +106,7 @@ fn create_macos_runtime_marker(target: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn bundle_macos_qemu_runtime(lib_dir: &Path) -> anyhow::Result<()> {
+fn bundle_macos_qemu_runtime(root: &Path, lib_dir: &Path) -> anyhow::Result<()> {
     let qemu = find_macos_qemu_binary().context(
         "missing qemu-system-x86_64 on PATH; install Homebrew qemu for macos-x86_64 runtime builds",
     )?;
@@ -114,6 +114,7 @@ fn bundle_macos_qemu_runtime(lib_dir: &Path) -> anyhow::Result<()> {
         .with_context(|| format!("validating {}", qemu.display()))?;
     let target = lib_dir.join("qemu-system-x86_64");
     copy_runtime_support_file(&qemu, &target)?;
+    ad_hoc_sign_hvf_helper(root, &target)?;
     let mut dependencies = BTreeSet::new();
     collect_macos_binary_deps(&qemu, &mut dependencies)?;
     for dependency in dependencies {
@@ -124,6 +125,27 @@ fn bundle_macos_qemu_runtime(lib_dir: &Path) -> anyhow::Result<()> {
         );
         copy_runtime_support_file(&dependency, &destination)?;
     }
+    Ok(())
+}
+
+fn ad_hoc_sign_hvf_helper(root: &Path, helper: &Path) -> anyhow::Result<()> {
+    let entitlements = root.join("macos").join("sagens.entitlements");
+    ensure!(
+        entitlements.is_file(),
+        "missing macOS entitlements file: {}",
+        entitlements.display()
+    );
+    let status = Command::new("codesign")
+        .arg("--force")
+        .arg("--sign")
+        .arg("-")
+        .arg("--entitlements")
+        .arg(&entitlements)
+        .arg("--timestamp=none")
+        .arg(helper)
+        .status()
+        .with_context(|| format!("codesigning {}", helper.display()))?;
+    ensure!(status.success(), "codesign failed for {}", helper.display());
     Ok(())
 }
 
