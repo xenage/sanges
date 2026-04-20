@@ -76,12 +76,11 @@ pub async fn write_file(path: &str, data: Vec<u8>, create_parents: bool) -> Resu
     run_blocking(move || {
         let root = Path::new(WORKSPACE_ROOT);
         let file_path = resolve_workspace_path(root, &path)?;
-        if let Some(parent) = file_path.parent() {
-            if create_parents {
-                std::fs::create_dir_all(parent).map_err(|error| {
-                    SandboxError::io("creating workspace parent directory", error)
-                })?;
-            }
+        if let Some(parent) = file_path.parent()
+            && create_parents
+        {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| SandboxError::io("creating workspace parent directory", error))?;
         }
         let mut file = std::fs::File::create(&file_path)
             .map_err(|error| SandboxError::io("creating workspace file", error))?;

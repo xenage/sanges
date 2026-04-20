@@ -260,13 +260,11 @@ async fn wait_exec_status(
         if send_process_group_signal(child, libc::SIGTERM)
             .await
             .is_ok()
-        {
-            if tokio::time::timeout(Duration::from_millis(kill_grace_ms), wait_child_exit(child))
+            && tokio::time::timeout(Duration::from_millis(kill_grace_ms), wait_child_exit(child))
                 .await
                 .is_ok()
-            {
-                return ExecExit::Timeout;
-            }
+        {
+            return ExecExit::Timeout;
         }
         force_kill(child).await;
         let _ = wait_child_exit(child).await;

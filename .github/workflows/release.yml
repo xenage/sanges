@@ -50,7 +50,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y e2fsprogs gnupg tar clang lld pkg-config patchelf libc6-dev libelf-dev libssl-dev libncurses-dev bison flex dwarves cpio xz-utils
+          sudo apt-get install -y e2fsprogs gnupg tar clang lld llvm-dev libclang-dev pkg-config patchelf libc6-dev libelf-dev libssl-dev libncurses-dev bison flex dwarves cpio xz-utils
 
       - name: Install macOS build deps
         if: runner.os == 'macOS'
