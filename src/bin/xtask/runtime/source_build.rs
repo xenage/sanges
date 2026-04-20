@@ -6,7 +6,39 @@ use std::process::Command;
 
 use anyhow::{Context, ensure};
 
-use super::super::types::{Platform, PlatformArch};
+use super::super::types::{Platform, PlatformArch, PlatformOs};
+
+pub(super) struct SourcePatchGuards {
+    _guards: Vec<SourcePatchGuard>,
+}
+
+struct SourcePatchGuard {
+    path: PathBuf,
+    original: String,
+}
+
+impl Drop for SourcePatchGuard {
+    fn drop(&mut self) {
+        let _ = fs::write(&self.path, &self.original);
+    }
+}
+
+pub(super) fn patch_libkrun_sources(
+    libkrun_root: &Path,
+    platform: Platform,
+) -> anyhow::Result<SourcePatchGuards> {
+    let mut guards = Vec::new();
+    if let Some(guard) = match platform {
+        Platform {
+            os: PlatformOs::Macos,
+            arch: PlatformArch::X86_64,
+        } => patch_libkrun_worker_message(libkrun_root)?,
+        _ => None,
+    } {
+        guards.push(guard);
+    }
+    Ok(SourcePatchGuards { _guards: guards })
+}
 
 pub(super) fn preferred_host_clang() -> Option<PathBuf> {
     xcrun_find("clang").or_else(|| {
@@ -153,4 +185,22 @@ fn xcrun_find(tool: &str) -> Option<PathBuf> {
     let path = String::from_utf8(output.stdout).ok()?;
     let candidate = PathBuf::from(path.trim());
     candidate.is_file().then_some(candidate)
+}
+
+fn patch_libkrun_worker_message(libkrun_root: &Path) -> anyhow::Result<Option<SourcePatchGuard>> {
+    let path = libkrun_root
+        .join("src")
+        .join("utils")
+        .join("src")
+        .join("worker_message.rs");
+    let original =
+        fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+    let old = "#[cfg(target_arch = \"x86_64\")]";
+    let new = "#[cfg(all(target_os = \"linux\", target_arch = \"x86_64\"))]";
+    if !original.contains(old) {
+        return Ok(None);
+    }
+    let updated = original.replace(old, new);
+    fs::write(&path, updated).with_context(|| format!("writing {}", path.display()))?;
+    Ok(Some(SourcePatchGuard { path, original }))
 }

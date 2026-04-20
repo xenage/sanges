@@ -17,8 +17,8 @@ use super::types::{
     RuntimeBundle, RuntimeBundleSource, absolutize, target_root,
 };
 use source_build::{
-    macos_cc_linux_value, preferred_host_clang, preferred_ld_lld, preferred_libclang_dir,
-    prepend_env_path, stage_libclang_runtime,
+    macos_cc_linux_value, patch_libkrun_sources, preferred_host_clang, preferred_ld_lld,
+    preferred_libclang_dir, prepend_env_path, stage_libclang_runtime,
 };
 use submodules::ensure_upstream_checkout;
 
@@ -339,52 +339,6 @@ fn build_libkrun_from_source(
         })?;
     }
     Ok(())
-}
-
-struct SourcePatchGuard {
-    path: PathBuf,
-    original: String,
-}
-
-impl Drop for SourcePatchGuard {
-    fn drop(&mut self) {
-        let _ = fs::write(&self.path, &self.original);
-    }
-}
-
-fn patch_libkrun_sources(
-    libkrun_root: &Path,
-    platform: Platform,
-) -> anyhow::Result<Vec<SourcePatchGuard>> {
-    let mut guards = Vec::new();
-    if let Some(guard) = match platform {
-        Platform {
-            os: PlatformOs::Macos,
-            arch: PlatformArch::X86_64,
-        } => patch_libkrun_worker_message(libkrun_root)?,
-        _ => None,
-    } {
-        guards.push(guard);
-    }
-    Ok(guards)
-}
-
-fn patch_libkrun_worker_message(libkrun_root: &Path) -> anyhow::Result<Option<SourcePatchGuard>> {
-    let path = libkrun_root
-        .join("src")
-        .join("utils")
-        .join("src")
-        .join("worker_message.rs");
-    let original =
-        fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-    let old = "#[cfg(target_arch = \"x86_64\")]";
-    let new = "#[cfg(all(target_os = \"linux\", target_arch = \"x86_64\"))]";
-    if !original.contains(old) {
-        return Ok(None);
-    }
-    let updated = original.replace(old, new);
-    fs::write(&path, updated).with_context(|| format!("writing {}", path.display()))?;
-    Ok(Some(SourcePatchGuard { path, original }))
 }
 
 fn upstream_libkrun_arch(platform: Platform) -> Option<&'static str> {
