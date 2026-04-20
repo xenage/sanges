@@ -1,2 +1,6 @@
 /runtime/*
 !/runtime/README.md
+!/runtime/macos-aarch64/
+!/runtime/macos-aarch64/**
+!/runtime/macos-x86_64/
+!/runtime/macos-x86_64/**

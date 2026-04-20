@@ -22,6 +22,10 @@ target/
 /release-assets/
 /third_party/runtime/*
 !/third_party/runtime/README.md
+!/third_party/runtime/macos-aarch64/
+!/third_party/runtime/macos-aarch64/**
+!/third_party/runtime/macos-x86_64/
+!/third_party/runtime/macos-x86_64/**
 
 # Local runtime and packaging caches
 /.box-artifacts/
