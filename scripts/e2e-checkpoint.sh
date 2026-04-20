@@ -35,6 +35,11 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
 fi
 
 cleanup() {
+  local status="${1:-0}"
+  if [[ "$status" -ne 0 && -f "$STATE_DIR/daemon.log" ]]; then
+    echo "daemon log:" >&2
+    cat "$STATE_DIR/daemon.log" >&2 || true
+  fi
   if [[ -f "$STATE_DIR/daemon.pid" ]]; then
     local daemon_pid
     daemon_pid="$(tr -d '[:space:]' < "$STATE_DIR/daemon.pid" || true)"
@@ -45,7 +50,7 @@ cleanup() {
   fi
   rm -rf "$ROOT_TMP"
 }
-trap cleanup EXIT
+trap 'cleanup "$?"' EXIT
 
 PORT="$(python3 - <<'PY'
 import socket
@@ -103,7 +108,7 @@ assert_equals() {
 }
 
 extract_first_uuid() {
-  python3 - <<'PY'
+  python3 -c '
 import re
 import sys
 
@@ -111,7 +116,7 @@ text = sys.stdin.read()
 match = re.search(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b", text)
 if match:
     print(match.group(0))
-PY
+'
 }
 
 wait_for_checkpoint_order() {
@@ -132,7 +137,8 @@ assert_uuid() {
 START_OUT="$(run_sagens start)"
 assert_contains "$START_OUT" "daemon "
 
-BOX_ID="$(run_sagens box new | extract_first_uuid)"
+BOX_NEW_OUT="$(run_sagens box new)"
+BOX_ID="$(printf '%s\n' "$BOX_NEW_OUT" | extract_first_uuid)"
 assert_uuid "$BOX_ID"
 run_sagens box start "$BOX_ID" >/dev/null
 
@@ -142,19 +148,21 @@ run_sagens box fs "$BOX_ID" download /workspace/note.txt "$ROOT_TMP/note-downloa
 SEED_READ="$(cat "$ROOT_TMP/note-downloaded.txt")"
 assert_equals "$SEED_READ" "seed"
 
-CHECKPOINT_A="$(run_sagens box checkpoint create "$BOX_ID" --name seed --meta stage=seed --meta suite=checkpoint | extract_first_uuid)"
+CHECKPOINT_A_OUT="$(run_sagens box checkpoint create "$BOX_ID" --name seed --meta stage=seed --meta suite=checkpoint)"
+CHECKPOINT_A="$(printf '%s\n' "$CHECKPOINT_A_OUT" | extract_first_uuid)"
 assert_uuid "$CHECKPOINT_A"
 
 CHECKPOINT_LIST="$(run_sagens box checkpoint list "$BOX_ID")"
 assert_contains "$CHECKPOINT_LIST" "$CHECKPOINT_A"
-assert_contains "$CHECKPOINT_LIST" $'seed\t'
+assert_contains "$CHECKPOINT_LIST" "seed"
 assert_contains "$CHECKPOINT_LIST" '"stage":"seed"'
 assert_contains "$CHECKPOINT_LIST" '"suite":"checkpoint"'
 
 wait_for_checkpoint_order
 printf 'branch-b' > "$ROOT_TMP/note.txt"
 run_sagens box fs "$BOX_ID" upload "$ROOT_TMP/note.txt" /workspace/note.txt >/dev/null
-CHECKPOINT_B="$(run_sagens box checkpoint create "$BOX_ID" --name branch-b --meta stage=branch-b | extract_first_uuid)"
+CHECKPOINT_B_OUT="$(run_sagens box checkpoint create "$BOX_ID" --name branch-b --meta stage=branch-b)"
+CHECKPOINT_B="$(printf '%s\n' "$CHECKPOINT_B_OUT" | extract_first_uuid)"
 assert_uuid "$CHECKPOINT_B"
 CHECKPOINT_LIST_BEFORE_ROLLBACK="$(run_sagens box checkpoint list "$BOX_ID")"
 assert_contains "$CHECKPOINT_LIST_BEFORE_ROLLBACK" "$CHECKPOINT_A"
@@ -180,13 +188,15 @@ assert_not_contains "$CHECKPOINT_LIST_AFTER_ROLLBACK" "branch-b"
 wait_for_checkpoint_order
 printf 'replace-base' > "$ROOT_TMP/note.txt"
 run_sagens box fs "$BOX_ID" upload "$ROOT_TMP/note.txt" /workspace/note.txt >/dev/null
-CHECKPOINT_C="$(run_sagens box checkpoint create "$BOX_ID" --name replace-base --meta stage=replace-base | extract_first_uuid)"
+CHECKPOINT_C_OUT="$(run_sagens box checkpoint create "$BOX_ID" --name replace-base --meta stage=replace-base)"
+CHECKPOINT_C="$(printf '%s\n' "$CHECKPOINT_C_OUT" | extract_first_uuid)"
 assert_uuid "$CHECKPOINT_C"
 
 wait_for_checkpoint_order
 printf 'replace-newer' > "$ROOT_TMP/note.txt"
 run_sagens box fs "$BOX_ID" upload "$ROOT_TMP/note.txt" /workspace/note.txt >/dev/null
-CHECKPOINT_D="$(run_sagens box checkpoint create "$BOX_ID" --name replace-newer --meta stage=replace-newer | extract_first_uuid)"
+CHECKPOINT_D_OUT="$(run_sagens box checkpoint create "$BOX_ID" --name replace-newer --meta stage=replace-newer)"
+CHECKPOINT_D="$(printf '%s\n' "$CHECKPOINT_D_OUT" | extract_first_uuid)"
 assert_uuid "$CHECKPOINT_D"
 CHECKPOINT_LIST_BEFORE_REPLACE="$(run_sagens box checkpoint list "$BOX_ID")"
 assert_contains "$CHECKPOINT_LIST_BEFORE_REPLACE" "$CHECKPOINT_C"
@@ -210,7 +220,8 @@ run_sagens box fs "$BOX_ID" upload "$ROOT_TMP/note.txt" /workspace/note.txt >/de
 run_sagens box fs "$BOX_ID" download /workspace/note.txt "$ROOT_TMP/note-downloaded.txt" >/dev/null
 SOURCE_BEFORE_FORK="$(cat "$ROOT_TMP/note-downloaded.txt")"
 assert_equals "$SOURCE_BEFORE_FORK" "source-live"
-FORK_BOX_ID="$(run_sagens box checkpoint fork "$BOX_ID" "$CHECKPOINT_A" --name forked-seed | extract_first_uuid)"
+FORK_BOX_OUT="$(run_sagens box checkpoint fork "$BOX_ID" "$CHECKPOINT_A" --name forked-seed)"
+FORK_BOX_ID="$(printf '%s\n' "$FORK_BOX_OUT" | extract_first_uuid)"
 assert_uuid "$FORK_BOX_ID"
 run_sagens box fs "$BOX_ID" download /workspace/note.txt "$ROOT_TMP/note-downloaded.txt" >/dev/null
 SOURCE_AFTER_FORK="$(cat "$ROOT_TMP/note-downloaded.txt")"

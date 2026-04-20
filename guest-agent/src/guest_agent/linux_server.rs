@@ -168,68 +168,83 @@ async fn handle_connection(stream: VsockStream, config: BootConfig) -> Result<bo
                 }
             },
             GuestRequest::SnapshotWorkspace { request_id } => {
-                let entries = fs::snapshot_workspace().await?;
-                rpc::send_event(
-                    &writer,
-                    &GuestEvent::WorkspaceSnapshot {
-                        request_id,
-                        entries,
-                    },
-                )
-                .await?;
+                match fs::snapshot_workspace().await {
+                    Ok(entries) => {
+                        rpc::send_event(
+                            &writer,
+                            &GuestEvent::WorkspaceSnapshot {
+                                request_id,
+                                entries,
+                            },
+                        )
+                        .await?;
+                    }
+                    Err(error) => send_error(&writer, Some(request_id), None, &error).await?,
+                }
             }
-            GuestRequest::SyncWorkspace { request_id } => {
-                fs::sync_workspace().await?;
-                rpc::send_event(&writer, &GuestEvent::Ack { request_id }).await?;
-            }
-            GuestRequest::RuntimeStats { request_id } => {
-                let stats = stats::runtime_stats().await?;
-                rpc::send_event(&writer, &GuestEvent::RuntimeStats { request_id, stats }).await?;
-            }
-            GuestRequest::ListFiles { request_id, path } => {
-                let entries = fs::list_files(&path).await?;
-                rpc::send_event(
-                    &writer,
-                    &GuestEvent::FilesListed {
-                        request_id,
-                        entries,
-                    },
-                )
-                .await?;
-            }
+            GuestRequest::SyncWorkspace { request_id } => match fs::sync_workspace().await {
+                Ok(()) => rpc::send_event(&writer, &GuestEvent::Ack { request_id }).await?,
+                Err(error) => send_error(&writer, Some(request_id), None, &error).await?,
+            },
+            GuestRequest::RuntimeStats { request_id } => match stats::runtime_stats().await {
+                Ok(stats) => {
+                    rpc::send_event(&writer, &GuestEvent::RuntimeStats { request_id, stats })
+                        .await?;
+                }
+                Err(error) => send_error(&writer, Some(request_id), None, &error).await?,
+            },
+            GuestRequest::ListFiles { request_id, path } => match fs::list_files(&path).await {
+                Ok(entries) => {
+                    rpc::send_event(
+                        &writer,
+                        &GuestEvent::FilesListed {
+                            request_id,
+                            entries,
+                        },
+                    )
+                    .await?;
+                }
+                Err(error) => send_error(&writer, Some(request_id), None, &error).await?,
+            },
             GuestRequest::ReadFile {
                 request_id,
                 path,
                 limit,
-            } => {
-                let file = ReadFilePayload::from_read_file(&fs::read_file(&path, limit).await?);
-                rpc::send_event(&writer, &GuestEvent::FileRead { request_id, file }).await?;
-            }
+            } => match fs::read_file(&path, limit).await {
+                Ok(file) => {
+                    let file = ReadFilePayload::from_read_file(&file);
+                    rpc::send_event(&writer, &GuestEvent::FileRead { request_id, file }).await?;
+                }
+                Err(error) => send_error(&writer, Some(request_id), None, &error).await?,
+            },
             GuestRequest::WriteFile {
                 request_id,
                 path,
                 data,
                 create_parents,
-            } => {
-                fs::write_file(&path, decode_bytes(&data)?, create_parents).await?;
-                rpc::send_event(&writer, &GuestEvent::Ack { request_id }).await?;
-            }
+            } => match decode_bytes(&data) {
+                Ok(data) => match fs::write_file(&path, data, create_parents).await {
+                    Ok(()) => rpc::send_event(&writer, &GuestEvent::Ack { request_id }).await?,
+                    Err(error) => send_error(&writer, Some(request_id), None, &error).await?,
+                },
+                Err(error) => send_error(&writer, Some(request_id), None, &error).await?,
+            },
             GuestRequest::MakeDir {
                 request_id,
                 path,
                 recursive,
-            } => {
-                fs::make_dir(&path, recursive).await?;
-                rpc::send_event(&writer, &GuestEvent::Ack { request_id }).await?;
-            }
+            } => match fs::make_dir(&path, recursive).await {
+                Ok(()) => rpc::send_event(&writer, &GuestEvent::Ack { request_id }).await?,
+                Err(error) => send_error(&writer, Some(request_id), None, &error).await?,
+            },
             GuestRequest::RemovePath {
                 request_id,
                 path,
                 recursive,
-            } => {
-                fs::remove_path(&path, recursive).await?;
-                rpc::send_event(&writer, &GuestEvent::Ack { request_id }).await?;
-            }
+            } => match fs::remove_path(&path, recursive).await {
+                Ok(()) => rpc::send_event(&writer, &GuestEvent::Ack { request_id }).await?,
+                Err(error) => send_error(&writer, Some(request_id), None, &error).await?,
+            },
             GuestRequest::Shutdown { request_id } => {
                 for (_, shell) in shells.lock().await.drain() {
                     linux_exec::close_shell(shell).await;

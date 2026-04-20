@@ -36,6 +36,11 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
 fi
 
 cleanup() {
+  local status="${1:-0}"
+  if [[ "$status" -ne 0 && -f "$STATE_DIR/daemon.log" ]]; then
+    echo "daemon log:" >&2
+    cat "$STATE_DIR/daemon.log" >&2 || true
+  fi
   if [[ -f "$STATE_DIR/daemon.pid" ]]; then
     local daemon_pid
     daemon_pid="$(tr -d '[:space:]' < "$STATE_DIR/daemon.pid" || true)"
@@ -46,7 +51,7 @@ cleanup() {
   fi
   rm -rf "$ROOT_TMP"
 }
-trap cleanup EXIT
+trap 'cleanup "$?"' EXIT
 
 PORT="$(python3 - <<'PY'
 import socket
@@ -108,7 +113,7 @@ assert_equals() {
 }
 
 extract_first_uuid() {
-  python3 - <<'PY'
+  python3 -c '
 import re
 import sys
 
@@ -116,12 +121,12 @@ text = sys.stdin.read()
 match = re.search(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b", text)
 if match:
     print(match.group(0))
-PY
+'
 }
 
 extract_table_value() {
   local label="$1"
-  python3 - "$label" <<'PY'
+  python3 -c '
 import re
 import sys
 
@@ -132,7 +137,7 @@ for raw_line in text.splitlines():
     if len(parts) >= 2 and parts[0] == label:
         print(parts[1])
         break
-PY
+' "$label"
 }
 
 START_OUT="$(run_sagens start)"
@@ -144,7 +149,8 @@ assert_contains "$HELP_OUT" "sagens <command> [args]"
 LIST_OUT="$(run_sagens box list)"
 assert_contains "$LIST_OUT" "No BOXes found."
 
-BOX_ID="$(run_sagens box new | extract_first_uuid)"
+BOX_NEW_OUT="$(run_sagens box new)"
+BOX_ID="$(printf '%s\n' "$BOX_NEW_OUT" | extract_first_uuid)"
 if [[ ! "$BOX_ID" =~ ^[0-9a-fA-F-]{36}$ ]]; then
   echo "invalid box id: $BOX_ID" >&2
   exit 1

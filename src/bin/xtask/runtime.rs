@@ -17,8 +17,9 @@ use super::types::{
     RuntimeBundle, RuntimeBundleSource, absolutize, target_root,
 };
 use source_build::{
-    macos_cc_linux_value, patch_libkrun_sources, preferred_host_clang, preferred_ld_lld,
-    preferred_libclang_dir, prepend_env_path, stage_libclang_runtime,
+    macos_cc_linux_value, patch_libkrun_sources, prebuilt_runtime_bundle_ready,
+    preferred_host_clang, preferred_ld_lld, preferred_libclang_dir, prepend_env_path,
+    stage_libclang_runtime,
 };
 use submodules::ensure_upstream_checkout;
 
@@ -47,9 +48,13 @@ pub(super) fn ensure_runtime_bundle(
     let lib_dir = runtime_dir.join("lib");
     let share_dir = runtime_dir.join("share").join("krunkit");
     let libkrun = lib_dir.join(platform.lib_name());
-    let source = if libkrun.is_file() {
+    let source = if prebuilt_runtime_bundle_ready(&lib_dir, &libkrun, platform)? {
         RuntimeBundleSource::Prebuilt
     } else {
+        if runtime_dir.exists() {
+            fs::remove_dir_all(&runtime_dir)
+                .with_context(|| format!("removing {}", runtime_dir.display()))?;
+        }
         fs::create_dir_all(&lib_dir).with_context(|| format!("creating {}", lib_dir.display()))?;
         if platform.os == PlatformOs::Macos {
             fs::create_dir_all(&share_dir)

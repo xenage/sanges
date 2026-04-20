@@ -164,6 +164,61 @@ pub(super) fn macos_cc_linux_value(
     )
 }
 
+pub(super) fn prebuilt_runtime_bundle_ready(
+    lib_dir: &Path,
+    libkrun: &Path,
+    platform: Platform,
+) -> anyhow::Result<bool> {
+    if !libkrun.is_file() {
+        return Ok(false);
+    }
+    if platform.os != PlatformOs::Macos {
+        return Ok(true);
+    }
+    runtime_support_matches_platform(lib_dir, platform)
+}
+
+fn runtime_support_matches_platform(lib_dir: &Path, platform: Platform) -> anyhow::Result<bool> {
+    for entry in fs::read_dir(lib_dir).with_context(|| format!("reading {}", lib_dir.display()))? {
+        let path = entry?.path();
+        if !path.is_file() {
+            continue;
+        }
+        let is_dylib = path
+            .extension()
+            .and_then(OsStr::to_str)
+            .is_some_and(|extension| extension == "dylib");
+        if is_dylib && !macos_binary_has_platform_arch(&path, platform.arch)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_binary_has_platform_arch(path: &Path, arch: PlatformArch) -> anyhow::Result<bool> {
+    let expected = match arch {
+        PlatformArch::Aarch64 => "arm64",
+        PlatformArch::X86_64 => "x86_64",
+    };
+    let output = Command::new("lipo")
+        .arg("-archs")
+        .arg(path)
+        .output()
+        .with_context(|| format!("running lipo on {}", path.display()))?;
+    if !output.status.success() {
+        return Ok(false);
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .any(|value| value == expected))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn macos_binary_has_platform_arch(_: &Path, _: PlatformArch) -> anyhow::Result<bool> {
+    Ok(true)
+}
+
 fn rustup_which(tool: &str) -> Option<PathBuf> {
     let output = crate::cmd::tool_command("rustup")
         .arg("which")

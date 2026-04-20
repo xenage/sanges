@@ -151,6 +151,10 @@ fn should_fallback_to_file_download(error: &SandboxError) -> bool {
             matches!(source.kind(), std::io::ErrorKind::NotADirectory)
                 || matches!(source.raw_os_error(), Some(libc::ENOTDIR))
         }
+        SandboxError::Backend(message) | SandboxError::Protocol(message) => {
+            message.contains("reading workspace directory")
+                && (message.contains("Not a directory") || message.contains("os error 20"))
+        }
         _ => false,
     }
 }
@@ -202,6 +206,9 @@ mod tests {
             "reading workspace directory",
             io::Error::from_raw_os_error(libc::ENOTDIR),
         );
+        let wrapped_enotdir = SandboxError::backend(
+            "protocol error: reading workspace directory: Not a directory (os error 20)",
+        );
         let not_found = SandboxError::io(
             "reading workspace directory",
             io::Error::from(io::ErrorKind::NotFound),
@@ -209,6 +216,7 @@ mod tests {
         let backend = SandboxError::backend("websocket connection closed");
 
         assert!(should_fallback_to_file_download(&enotdir));
+        assert!(should_fallback_to_file_download(&wrapped_enotdir));
         assert!(!should_fallback_to_file_download(&not_found));
         assert!(!should_fallback_to_file_download(&backend));
     }

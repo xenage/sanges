@@ -40,14 +40,15 @@ pub fn build_runtime_config_for_endpoint(
     state_dir: &Path,
     endpoint: &str,
 ) -> Result<RuntimeConfig> {
+    let prefer_embedded_assets = crate::bundle::has_embedded_assets();
     Ok(RuntimeConfig {
         state_dir: state_dir.to_path_buf(),
         guest: GuestConfig {
-            libkrun_library: required_path(&default_project_artifact_candidates("libkrun")),
-            kernel_image: required_path(&default_project_artifact_candidates("kernel")),
+            libkrun_library: default_guest_path("libkrun", prefer_embedded_assets),
+            kernel_image: default_guest_path("kernel", prefer_embedded_assets),
             kernel_format: parse_kernel_format().unwrap_or_else(|_| default_kernel_format()),
-            rootfs_image: required_path(&default_project_artifact_candidates("rootfs")),
-            firmware: optional_path(&default_project_artifact_candidates("firmware")),
+            rootfs_image: default_guest_path("rootfs", prefer_embedded_assets),
+            firmware: default_firmware_path(prefer_embedded_assets),
             guest_agent_path: PathBuf::from("/usr/local/bin/sagens-guest-agent"),
             guest_vsock_port: env::var("SAGENS_GUEST_VSOCK_PORT")
                 .ok()
@@ -86,6 +87,20 @@ pub fn build_runtime_config_for_endpoint(
         },
         default_policy: SandboxPolicy::default(),
     })
+}
+
+fn default_guest_path(kind: &str, prefer_embedded_assets: bool) -> PathBuf {
+    if prefer_embedded_assets {
+        return PathBuf::new();
+    }
+    required_path(&default_project_artifact_candidates(kind))
+}
+
+fn default_firmware_path(prefer_embedded_assets: bool) -> Option<PathBuf> {
+    if prefer_embedded_assets {
+        return None;
+    }
+    optional_path(&default_project_artifact_candidates("firmware"))
 }
 
 pub fn parse_endpoint_addr(endpoint: &str) -> Result<SocketAddr> {

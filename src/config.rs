@@ -13,7 +13,9 @@ pub enum IsolationMode {
 
 impl IsolationMode {
     pub fn default_for_host() -> Self {
-        if cfg!(target_os = "linux") {
+        if cfg!(target_os = "linux")
+            && std::env::var_os("SAGENS_CGROUP_PARENT").is_some_and(|value| !value.is_empty())
+        {
             Self::Secure
         } else {
             Self::Compat

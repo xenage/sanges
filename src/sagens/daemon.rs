@@ -74,13 +74,19 @@ pub async fn ensure_started(paths: &SagensPaths, host_binary: &Path) -> Result<(
     tokio::fs::create_dir_all(&paths.state_dir)
         .await
         .map_err(|error| SandboxError::io("creating daemon state directory", error))?;
-    spawn_background_daemon(host_binary, &user_config)
+    spawn_background_daemon(paths, host_binary, &user_config)
         .map_err(|error| SandboxError::io("spawning sagens daemon", error))?;
     wait_for_daemon(&user_config).await?;
     Ok((user_config, false))
 }
 
-fn spawn_background_daemon(host_binary: &Path, user_config: &UserConfig) -> std::io::Result<()> {
+fn spawn_background_daemon(
+    paths: &SagensPaths,
+    host_binary: &Path,
+    user_config: &UserConfig,
+) -> std::io::Result<()> {
+    let stdout = std::fs::File::create(paths.state_dir.join("daemon.log"))?;
+    let stderr = stdout.try_clone()?;
     let mut command = std::process::Command::new(host_binary);
     command
         .arg("daemon")
@@ -91,8 +97,8 @@ fn spawn_background_daemon(host_binary: &Path, user_config: &UserConfig) -> std:
         )
         .env("SAGENS_BOOTSTRAP_ADMIN_TOKEN", &user_config.admin_token)
         .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
+        .stdout(std::process::Stdio::from(stdout))
+        .stderr(std::process::Stdio::from(stderr));
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
