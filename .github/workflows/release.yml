@@ -23,7 +23,7 @@ jobs:
             platform: linux-x86_64
           - os: ubuntu-24.04-arm
             platform: linux-aarch64
-          - os: macos-13
+          - os: macos-15-intel
             platform: macos-x86_64
           - os: macos-14
             platform: macos-aarch64
@@ -47,13 +47,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Install Linux build deps
-        if: runner.os == "Linux"
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y e2fsprogs gnupg tar clang lld pkg-config patchelf libc6-dev libelf-dev libssl-dev libncurses-dev bison flex dwarves cpio xz-utils
 
       - name: Install macOS build deps
-        if: runner.os == "macOS"
+        if: runner.os == 'macOS'
         run: |
           brew install llvm lld xz e2fsprogs gnupg zig
           brew tap slp/krun
@@ -86,7 +86,7 @@ jobs:
             platform: linux-x86_64
           - os: ubuntu-24.04-arm
             platform: linux-aarch64
-          - os: macos-13
+          - os: macos-15-intel
             platform: macos-x86_64
           - os: macos-14
             platform: macos-aarch64
@@ -96,13 +96,13 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Linux runtime deps
-        if: runner.os == "Linux"
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y e2fsprogs
 
       - name: Install macOS runtime deps
-        if: runner.os == "macOS"
+        if: runner.os == 'macOS'
         run: brew install e2fsprogs
 
       - name: Download built artifact

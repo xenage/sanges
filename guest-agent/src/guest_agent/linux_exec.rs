@@ -224,7 +224,13 @@ fn apply_process_limits(
     )
 }
 
-fn apply_rlimit(resource: libc::c_int, value: libc::rlim_t, label: &str) -> std::io::Result<()> {
+#[cfg(target_os = "linux")]
+type RlimitResource = libc::__rlimit_resource_t;
+
+#[cfg(not(target_os = "linux"))]
+type RlimitResource = libc::c_int;
+
+fn apply_rlimit(resource: RlimitResource, value: libc::rlim_t, label: &str) -> std::io::Result<()> {
     let limit = libc::rlimit {
         rlim_cur: value,
         rlim_max: value,
