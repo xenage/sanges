@@ -200,15 +200,19 @@ fn collect_macos_binary_deps(
             continue;
         }
         let dependency = PathBuf::from(library);
-        if !dependency.is_file() || !dependencies.insert(dependency.clone()) {
+        let resolved = fs::canonicalize(&dependency).unwrap_or(dependency);
+        if !resolved.is_file() || !dependencies.insert(resolved.clone()) {
             continue;
         }
-        collect_macos_binary_deps(&dependency, dependencies)?;
+        collect_macos_binary_deps(&resolved, dependencies)?;
     }
     Ok(())
 }
 
 fn copy_runtime_support_file(source: &Path, target: &Path) -> anyhow::Result<()> {
+    if target.exists() {
+        fs::remove_file(target).with_context(|| format!("removing {}", target.display()))?;
+    }
     fs::copy(source, target).with_context(|| {
         format!(
             "copying runtime support {} into {}",
