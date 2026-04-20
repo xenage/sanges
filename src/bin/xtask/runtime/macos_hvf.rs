@@ -77,6 +77,8 @@ fn create_macos_runtime_marker(target: &Path) -> anyhow::Result<()> {
     let clang = preferred_host_clang().context(
         "missing clang for macOS x86_64 runtime marker build; install Xcode command line tools",
     )?;
+    let sdk =
+        macos_sdk_path().context("missing macOS SDK path for macOS x86_64 runtime marker build")?;
     let source = target.with_extension("c");
     fs::write(
         &source,
@@ -87,6 +89,8 @@ fn create_macos_runtime_marker(target: &Path) -> anyhow::Result<()> {
         .arg("-dynamiclib")
         .arg("-arch")
         .arg("x86_64")
+        .arg("-isysroot")
+        .arg(&sdk)
         .arg("-Wl,-install_name,@rpath/libkrun.dylib")
         .arg("-o")
         .arg(target)
@@ -149,6 +153,21 @@ fn find_macos_qemu_binary() -> Option<PathBuf> {
     env::split_paths(&path)
         .map(|dir| dir.join("qemu-system-x86_64"))
         .find(|candidate| candidate.is_file())
+}
+
+fn macos_sdk_path() -> Option<PathBuf> {
+    let output = Command::new("xcrun")
+        .arg("--sdk")
+        .arg("macosx")
+        .arg("--show-sdk-path")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path = String::from_utf8(output.stdout).ok()?;
+    let candidate = PathBuf::from(path.trim());
+    candidate.is_dir().then_some(candidate)
 }
 
 fn collect_macos_binary_deps(
