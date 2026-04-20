@@ -75,8 +75,8 @@ fn parse_rpc_transport(value: &str) -> Result<RpcTransport> {
     match value.trim().to_ascii_lowercase().as_str() {
         "vsock" => Ok(RpcTransport::Vsock),
         "virtio-serial" | "virtio_serial" => Ok(RpcTransport::VirtioSerial),
-        _ => Err(SandboxError::invalid(format!(
-            "sandbox.rpc_transport must be one of: vsock, virtio-serial"
-        ))),
+        _ => Err(SandboxError::invalid(
+            "sandbox.rpc_transport must be one of: vsock, virtio-serial".to_string(),
+        )),
     }
 }
