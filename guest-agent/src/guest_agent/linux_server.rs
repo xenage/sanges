@@ -6,7 +6,7 @@ use crate::{Result, SandboxError};
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
 use tokio::sync::Mutex;
-use tokio_vsock::{VMADDR_CID_ANY, VsockAddr, VsockListener, VsockStream};
+use tokio_vsock::{VMADDR_CID_ANY, VsockAddr, VsockListener};
 use uuid::Uuid;
 
 use super::linux_boot::{BootConfig, RpcTransport};

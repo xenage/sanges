@@ -1,7 +1,7 @@
 use std::pin::Pin;
 use std::sync::Arc;
 
-use tokio::io::{AsyncBufRead, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
 
 use crate::guest_rpc::{GuestEvent, GuestRequest};
@@ -40,12 +40,7 @@ where
     Box::pin(writer)
 }
 
-pub async fn next_request<T>(
-    lines: &mut tokio::io::Lines<BufReader<T>>,
-) -> Result<Option<GuestRequest>>
-where
-    T: AsyncBufRead + Unpin,
-{
+pub async fn next_request(lines: &mut GuestLines) -> Result<Option<GuestRequest>> {
     match lines.next_line().await {
         Ok(Some(line)) => serde_json::from_str(&line)
             .map(Some)
