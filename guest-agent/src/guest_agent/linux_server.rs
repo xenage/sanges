@@ -4,11 +4,12 @@ use std::sync::Arc;
 use crate::guest_rpc::{GuestEvent, GuestRequest, GuestRpcReady, ReadFilePayload, decode_bytes};
 use crate::{Result, SandboxError};
 use tokio::io::AsyncBufReadExt;
+use tokio::io::BufReader;
 use tokio::sync::Mutex;
 use tokio_vsock::{VMADDR_CID_ANY, VsockAddr, VsockListener, VsockStream};
 use uuid::Uuid;
 
-use super::linux_boot::BootConfig;
+use super::linux_boot::{BootConfig, RpcTransport};
 use super::linux_exec::{self, ShellState};
 use super::{bootstrap, fs, rpc, stats};
 
@@ -29,34 +30,81 @@ async fn run() -> Result<()> {
     bootstrap::mount_runtime_filesystems()?;
     let boot = BootConfig::from_cmdline("/proc/cmdline")?;
     eprintln!(
-        "guest agent: boot config rpc_port={} tmpfs_mib={} uid={} gid={} max_processes={} network_enabled={}",
-        boot.rpc_port, boot.tmpfs_mib, boot.uid, boot.gid, boot.max_processes, boot.network_enabled
+        "guest agent: boot config rpc_port={} rpc_transport={:?} tmpfs_mib={} uid={} gid={} max_processes={} network_enabled={}",
+        boot.rpc_port,
+        boot.rpc_transport,
+        boot.tmpfs_mib,
+        boot.uid,
+        boot.gid,
+        boot.max_processes,
+        boot.network_enabled
     );
     bootstrap::bootstrap_guest(boot)?;
     bootstrap::append_boot_log("boot config parsed\n");
-    let listener = VsockListener::bind(VsockAddr::new(VMADDR_CID_ANY, boot.rpc_port))
-        .map_err(|error| SandboxError::io("binding guest vsock listener", error))?;
-    bootstrap::append_boot_log("vsock listener bound\n");
-    eprintln!(
-        "guest agent: vsock listener bound on port {}",
-        boot.rpc_port
-    );
-    loop {
-        let (stream, _) = listener
-            .accept()
-            .await
-            .map_err(|error| SandboxError::io("accepting guest vsock connection", error))?;
-        eprintln!("guest agent: accepted vsock connection");
-        if handle_connection(stream, boot).await? {
-            break;
+    match boot.rpc_transport {
+        RpcTransport::Vsock => {
+            let listener = VsockListener::bind(VsockAddr::new(VMADDR_CID_ANY, boot.rpc_port))
+                .map_err(|error| SandboxError::io("binding guest vsock listener", error))?;
+            bootstrap::append_boot_log("vsock listener bound\n");
+            eprintln!(
+                "guest agent: vsock listener bound on port {}",
+                boot.rpc_port
+            );
+            loop {
+                let (stream, _) = listener
+                    .accept()
+                    .await
+                    .map_err(|error| SandboxError::io("accepting guest vsock connection", error))?;
+                eprintln!("guest agent: accepted vsock connection");
+                if handle_connection(stream, boot).await? {
+                    break;
+                }
+            }
+        }
+        RpcTransport::VirtioSerial => {
+            let path = "/dev/virtio-ports/sagens-rpc";
+            bootstrap::append_boot_log("opening virtio-serial rpc device\n");
+            let stream = open_virtio_serial(path).await?;
+            eprintln!("guest agent: virtio-serial rpc device ready at {path}");
+            let _ = handle_connection(stream, boot).await?;
         }
     }
     Ok(())
 }
 
-async fn handle_connection(stream: VsockStream, config: BootConfig) -> Result<bool> {
+async fn open_virtio_serial(path: &str) -> Result<tokio::fs::File> {
+    let start = std::time::Instant::now();
+    loop {
+        match tokio::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .await
+        {
+            Ok(file) => return Ok(file),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(SandboxError::io(
+                    format!("opening guest virtio-serial device {path}"),
+                    error,
+                ));
+            }
+        }
+        if start.elapsed() > std::time::Duration::from_secs(10) {
+            return Err(SandboxError::timeout(format!(
+                "timed out waiting for guest virtio-serial device {path}"
+            )));
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
+async fn handle_connection<T>(stream: T, config: BootConfig) -> Result<bool>
+where
+    T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
     let (reader, writer) = tokio::io::split(stream);
-    let writer = Arc::new(Mutex::new(writer));
+    let writer = Arc::new(Mutex::new(rpc::box_writer(writer)));
     rpc::send_event(
         &writer,
         &GuestEvent::Ready {
@@ -74,7 +122,7 @@ async fn handle_connection(stream: VsockStream, config: BootConfig) -> Result<bo
     )
     .await?;
 
-    let mut lines = tokio::io::BufReader::new(reader).lines();
+    let mut lines = BufReader::new(rpc::box_reader(reader)).lines();
     let shells = Arc::new(Mutex::new(HashMap::<Uuid, ShellState>::new()));
     let execs = Arc::new(Mutex::new(HashMap::new()));
     while let Some(request) = rpc::next_request(&mut lines).await? {

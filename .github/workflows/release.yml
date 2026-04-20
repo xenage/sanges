@@ -29,6 +29,7 @@ jobs:
             platform: macos-aarch64
     env:
       ARTIFACT_VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('ci-{0}', github.sha) }}
+      BUILD_CACHE_ROOT: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}
       APPLE_APP_SPECIFIC_PASSWORD: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
       APPLE_ID: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.APPLE_ID || '' }}
       TEAM_ID: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.TEAM_ID || '' }}
@@ -39,12 +40,27 @@ jobs:
       INSTALLER_P12_PASSWORD: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.INSTALLER_P12_PASSWORD || '' }}
       BUILD_LOCAL_SIGN: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && '1' || '' }}
       SAGENS_SKIP_INSTALLER: "1"
+      CARGO_TARGET_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/target
+      SAGENS_RUNTIME_BUNDLE_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/runtime
+      SAGENS_GUEST_OUTPUT_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/guest-output
+      SAGENS_GUEST_WORK_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/guest-work
     steps:
       - uses: actions/checkout@v6
         with:
           submodules: recursive
 
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ env.BUILD_CACHE_ROOT }}
+          key: release-build-${{ matrix.platform }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'build.rs', 'build-local.sh', 'shared/**', 'guest-agent/**', 'src/**', '.github/workflows/release.yml') }}
+          restore-keys: |
+            release-build-${{ matrix.platform }}-
 
       - name: Install Linux build deps
         if: runner.os == 'Linux'
@@ -56,6 +72,10 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install llvm lld xz e2fsprogs gnupg zig
+
+      - name: Install macOS Intel HVF deps
+        if: matrix.platform == 'macos-x86_64'
+        run: brew install qemu
 
       - name: Build standalone binary
         run: |

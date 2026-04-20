@@ -8,6 +8,8 @@ use std::sync::mpsc::SyncSender;
 use super::RUNNER_STARTUP_FD_ENV;
 use super::config::{LibkrunRunnerConfig, read_runner_config};
 use super::loader::Libkrun;
+#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+use super::qemu_hvf;
 use crate::config::IsolationMode;
 use crate::{Result, SandboxError};
 
@@ -17,17 +19,30 @@ pub fn run_from_file(path: &Path) -> Result<()> {
     if config.isolation_mode == IsolationMode::Secure {
         apply_secure_bootstrap(&config)?;
     }
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    {
+        return qemu_hvf::run(config);
+    }
+    #[allow(unreachable_code)]
     let libkrun = Libkrun::load(&config.library_path)?;
     let prepared = unsafe { libkrun.prepare_microvm(&config) }?;
     prepared.start_enter()
 }
 
 pub fn run_until_exit(
-    config: LibkrunRunnerConfig,
+    _config: LibkrunRunnerConfig,
     started_tx: SyncSender<Result<OwnedFd>>,
 ) -> Result<()> {
-    let libkrun = Libkrun::load(&config.library_path)?;
-    let prepared = unsafe { libkrun.prepare_microvm(&config) }?;
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    {
+        let _ = started_tx;
+        return Err(SandboxError::UnsupportedHost(
+            "the macos-x86_64 HVF backend requires subprocess runner mode".into(),
+        ));
+    }
+    #[allow(unreachable_code)]
+    let libkrun = Libkrun::load(&_config.library_path)?;
+    let prepared = unsafe { libkrun.prepare_microvm(&_config) }?;
     let shutdown_fd = duplicate_fd(prepared.shutdown_fd())?;
     let _ = started_tx.send(Ok(shutdown_fd));
     prepared.start_enter()

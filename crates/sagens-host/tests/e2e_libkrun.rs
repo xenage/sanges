@@ -44,7 +44,7 @@ mod host_e2e {
                     kernel_format: env("SAGENS_KERNEL_FORMAT")
                         .map(|value| GuestKernelFormat::parse(&value).expect("kernel format"))
                         .unwrap_or_else(|| {
-                            if cfg!(target_os = "macos") {
+                            if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
                                 GuestKernelFormat::PeGz
                             } else {
                                 GuestKernelFormat::Raw

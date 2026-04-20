@@ -1,6 +1,8 @@
 mod config;
 mod instance;
 mod loader;
+#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+mod qemu_hvf;
 pub mod runner;
 
 use std::fs::File;

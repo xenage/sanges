@@ -21,6 +21,17 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Restore cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ci-quality-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'build.rs', 'shared/**', 'guest-agent/**', 'src/**') }}
+          restore-keys: |
+            ci-quality-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Enforce CODE.md line limits
         run: python3 scripts/check_code_limits.py
 

@@ -1,5 +1,11 @@
 use crate::{Result, SandboxError};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RpcTransport {
+    Vsock,
+    VirtioSerial,
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct BootConfig {
     pub(crate) tmpfs_mib: u32,
@@ -10,6 +16,7 @@ pub(crate) struct BootConfig {
     pub(crate) max_file_size_bytes: u64,
     pub(crate) network_enabled: bool,
     pub(crate) rpc_port: u32,
+    pub(crate) rpc_transport: RpcTransport,
 }
 
 impl BootConfig {
@@ -25,6 +32,7 @@ impl BootConfig {
             max_file_size_bytes: 16 * 1024 * 1024,
             network_enabled: false,
             rpc_port: 11_000,
+            rpc_transport: RpcTransport::Vsock,
         };
         for token in cmdline.split_whitespace() {
             if let Some(value) = token.strip_prefix("sandbox.tmpfs_mib=") {
@@ -43,6 +51,8 @@ impl BootConfig {
                 config.network_enabled = parse_u32(value, "sandbox.network_enabled")? != 0;
             } else if let Some(value) = token.strip_prefix("sandbox.rpc_port=") {
                 config.rpc_port = parse_u32(value, "sandbox.rpc_port")?;
+            } else if let Some(value) = token.strip_prefix("sandbox.rpc_transport=") {
+                config.rpc_transport = parse_rpc_transport(value)?;
             }
         }
         Ok(config)
@@ -59,4 +69,14 @@ fn parse_u64(value: &str, field: &str) -> Result<u64> {
     value
         .parse()
         .map_err(|_| SandboxError::invalid(format!("{field} must be an integer")))
+}
+
+fn parse_rpc_transport(value: &str) -> Result<RpcTransport> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "vsock" => Ok(RpcTransport::Vsock),
+        "virtio-serial" | "virtio_serial" => Ok(RpcTransport::VirtioSerial),
+        _ => Err(SandboxError::invalid(format!(
+            "sandbox.rpc_transport must be one of: vsock, virtio-serial"
+        ))),
+    }
 }

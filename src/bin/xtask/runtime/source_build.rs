@@ -191,7 +191,11 @@ fn runtime_support_matches_platform(lib_dir: &Path, platform: Platform) -> anyho
             .extension()
             .and_then(OsStr::to_str)
             .is_some_and(|extension| extension == "dylib");
-        if is_dylib && !macos_binary_has_platform_arch(&path, platform.arch)? {
+        let is_qemu_binary = path
+            .file_name()
+            .and_then(OsStr::to_str)
+            .is_some_and(|name| name == "qemu-system-x86_64");
+        if (is_dylib || is_qemu_binary) && !macos_binary_has_platform_arch(&path, platform.arch)? {
             return Ok(false);
         }
     }

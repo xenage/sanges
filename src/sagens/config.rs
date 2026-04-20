@@ -172,7 +172,7 @@ fn parse_kernel_format() -> Result<GuestKernelFormat> {
 }
 
 fn default_kernel_format() -> GuestKernelFormat {
-    if cfg!(target_os = "macos") {
+    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
         GuestKernelFormat::PeGz
     } else {
         GuestKernelFormat::Raw
@@ -213,9 +213,7 @@ fn default_project_artifact_candidates(kind: &str) -> Vec<PathBuf> {
         ("firmware", "macos", "aarch64") => {
             vec![root.join("third_party/runtime/macos-aarch64/share/krunkit/KRUN_EFI.silent.fd")]
         }
-        ("kernel", "macos", "x86_64") => {
-            vec![root.join("artifacts/alpine-x86_64/vmlinuz-virt.pe.gz")]
-        }
+        ("kernel", "macos", "x86_64") => vec![root.join("artifacts/alpine-x86_64/vmlinuz-virt")],
         ("kernel", "macos", "aarch64") => {
             vec![root.join("artifacts/alpine-aarch64/vmlinuz-virt.pe.gz")]
         }

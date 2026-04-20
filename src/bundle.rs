@@ -21,6 +21,7 @@ pub struct EmbeddedAsset {
     pub file_name: &'static str,
     pub bytes: &'static [u8],
     pub compression: Compression,
+    pub mode: u32,
 }
 
 include!(concat!(env!("OUT_DIR"), "/embedded_bundle.rs"));
@@ -112,6 +113,16 @@ async fn extract_asset(bundle_dir: &Path, label: &str, asset: EmbeddedAsset) -> 
     fs::write(&path, bytes)
         .await
         .map_err(|error| SandboxError::io(format!("writing embedded asset {label}"), error))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        fs::set_permissions(&path, std::fs::Permissions::from_mode(asset.mode))
+            .await
+            .map_err(|error| {
+                SandboxError::io(format!("setting embedded asset mode {label}"), error)
+            })?;
+    }
     Ok(path)
 }
 

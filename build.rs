@@ -24,6 +24,21 @@ enum CompressionMode {
     Zstd,
 }
 
+#[cfg(unix)]
+fn asset_mode(path: &Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::metadata(path)
+        .expect("read embedded asset metadata")
+        .permissions()
+        .mode()
+}
+
+#[cfg(not(unix))]
+fn asset_mode(_: &Path) -> u32 {
+    0o644
+}
+
 fn main() {
     let manifest_dir =
         PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
@@ -185,10 +200,11 @@ fn render_asset_entry(path: &Path, out_dir: &Path) -> String {
 fn render_embedded_asset(path: &Path, out_dir: &Path) -> String {
     let (asset_path, compression) = write_embedded_asset(path, out_dir);
     format!(
-        "EmbeddedAsset {{ file_name: {file_name:?}, bytes: include_bytes!(r#\"{asset_path}\"#), compression: Compression::{compression}, }}",
+        "EmbeddedAsset {{ file_name: {file_name:?}, bytes: include_bytes!(r#\"{asset_path}\"#), compression: Compression::{compression}, mode: {mode}, }}",
         file_name = file_name(path),
         asset_path = asset_path.display(),
         compression = compression.variant_name(),
+        mode = asset_mode(path),
     )
 }
 
