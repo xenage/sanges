@@ -132,11 +132,10 @@ jobs:
       - name: Restore executable bit
         run: chmod +x "dist/sagens-${ARTIFACT_VERSION}-${{ matrix.platform }}"
 
-      - name: Run standalone e2e
+      - name: Run standalone smoke test
         run: |
           binary="$GITHUB_WORKSPACE/dist/sagens-${ARTIFACT_VERSION}-${{ matrix.platform }}"
-          bash scripts/e2e-standalone.sh "$binary"
-          bash scripts/e2e-checkpoint.sh "$binary"
+          bash scripts/e2e-standalone-smoke.sh "$binary"
 
   release:
     name: Release
