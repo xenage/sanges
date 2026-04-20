@@ -195,9 +195,8 @@ fn find_macos_libkrunfw() -> Option<PathBuf> {
 fn build_guest_agent(root: &Path, platform: Platform, profile: Profile) -> anyhow::Result<()> {
     ensure_rust_target(platform.guest_target())?;
     let target_dir = target_root(root).join("guest-agent");
-    let mut command = Command::new("rtk");
+    let mut command = crate::cmd::tool_command("cargo");
     command
-        .arg("cargo")
         .arg("build")
         .arg("--manifest-path")
         .arg(root.join(GUEST_AGENT_MANIFEST))
@@ -246,8 +245,7 @@ fn guest_agent_binary(root: &Path, platform: Platform, profile: Profile) -> Path
 }
 
 fn ensure_rust_target(target: &str) -> anyhow::Result<()> {
-    let status = Command::new("rtk")
-        .arg("rustup")
+    let status = crate::cmd::tool_command("rustup")
         .arg("target")
         .arg("add")
         .arg(target)
@@ -278,8 +276,8 @@ fn build_libkrun_from_source(
     runtime_dir: &Path,
 ) -> anyhow::Result<()> {
     let libkrun_root = ensure_upstream_checkout(root, "third_party/upstream/libkrun", "Makefile")?;
-    let mut make = Command::new("rtk");
-    make.arg("make").arg("-C").arg(&libkrun_root);
+    let mut make = crate::cmd::tool_command("make");
+    make.arg("-C").arg(&libkrun_root);
     match platform.os {
         PlatformOs::Macos => make.arg("EFI=1"),
         PlatformOs::Linux => make.arg("BLK=1"),

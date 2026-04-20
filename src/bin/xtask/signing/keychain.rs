@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
@@ -25,8 +25,7 @@ impl TempKeychain {
             settings.required("KEYCHAIN_PASSWORD", settings.keychain_password.as_deref())?;
 
         run(
-            Command::new("rtk")
-                .arg("security")
+            crate::cmd::tool_command("security")
                 .arg("create-keychain")
                 .arg("-p")
                 .arg(keychain_password)
@@ -34,8 +33,7 @@ impl TempKeychain {
             "creating temporary signing keychain",
         )?;
         run(
-            Command::new("rtk")
-                .arg("security")
+            crate::cmd::tool_command("security")
                 .arg("set-keychain-settings")
                 .arg("-lut")
                 .arg("21600")
@@ -43,8 +41,7 @@ impl TempKeychain {
             "configuring temporary signing keychain",
         )?;
         run(
-            Command::new("rtk")
-                .arg("security")
+            crate::cmd::tool_command("security")
                 .arg("unlock-keychain")
                 .arg("-p")
                 .arg(keychain_password)
@@ -53,8 +50,7 @@ impl TempKeychain {
         )?;
         import_certificates(&dir, &path, settings)?;
         run(
-            Command::new("rtk")
-                .arg("security")
+            crate::cmd::tool_command("security")
                 .arg("set-key-partition-list")
                 .arg("-S")
                 .arg("apple-tool:,apple:,codesign:,productbuild:,productsign:")
@@ -89,8 +85,7 @@ impl TempKeychain {
 
 impl Drop for TempKeychain {
     fn drop(&mut self) {
-        let _ = Command::new("rtk")
-            .arg("security")
+        let _ = crate::cmd::tool_command("security")
             .arg("delete-keychain")
             .arg(&self.path)
             .stdin(Stdio::null())
@@ -146,8 +141,7 @@ fn import_certificate(
     fs::write(&certificate, decode_base64(certificate_base64)?)
         .with_context(|| format!("writing {}", certificate.display()))?;
     run(
-        Command::new("rtk")
-            .arg("security")
+        crate::cmd::tool_command("security")
             .arg("import")
             .arg(&certificate)
             .arg("-k")

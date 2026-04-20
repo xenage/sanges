@@ -128,8 +128,7 @@ pub(super) fn macos_cc_linux_value(
 }
 
 fn rustup_which(tool: &str) -> Option<PathBuf> {
-    let output = Command::new("rtk")
-        .arg("rustup")
+    let output = crate::cmd::tool_command("rustup")
         .arg("which")
         .arg(tool)
         .output()
@@ -143,8 +142,7 @@ fn rustup_which(tool: &str) -> Option<PathBuf> {
 }
 
 fn xcrun_find(tool: &str) -> Option<PathBuf> {
-    let output = Command::new("rtk")
-        .arg("xcrun")
+    let output = crate::cmd::tool_command("xcrun")
         .arg("--find")
         .arg(tool)
         .output()

@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use super::cargo_ops::run;
 
@@ -69,8 +68,8 @@ fn missing_guest_artifacts(root: &Path, platform: Platform) -> bool {
 }
 
 fn cargo_build_host(root: &Path, profile: Profile) -> anyhow::Result<()> {
-    let mut command = Command::new("rtk");
-    command.arg("cargo").arg("build");
+    let mut command = crate::cmd::tool_command("cargo");
+    command.arg("build");
     if let Some(flag) = profile.cargo_flag() {
         command.arg(flag);
     }

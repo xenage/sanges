@@ -24,8 +24,7 @@ pub(super) fn find_installer_identity(keychain: &Path) -> anyhow::Result<String>
 }
 
 fn find_identity(keychain: &Path, marker: &str) -> anyhow::Result<String> {
-    let output = Command::new("rtk")
-        .arg("security")
+    let output = crate::cmd::tool_command("security")
         .arg("find-identity")
         .arg("-v")
         .arg("-p")

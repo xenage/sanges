@@ -152,8 +152,7 @@ pub fn notarize_release_archive(
         fs::remove_file(&archive).with_context(|| format!("removing {}", archive.display()))?;
     }
     run(
-        std::process::Command::new("rtk")
-            .arg("ditto")
+        crate::cmd::tool_command("ditto")
             .arg("-c")
             .arg("-k")
             .arg("--keepParent")
@@ -270,8 +269,7 @@ impl DeveloperIdSettings {
 
 fn ad_hoc_codesign(entitlements: &Path, binary: &Path) -> anyhow::Result<()> {
     run(
-        std::process::Command::new("rtk")
-            .arg("codesign")
+        crate::cmd::tool_command("codesign")
             .arg("--force")
             .arg("--sign")
             .arg("-")
@@ -316,8 +314,7 @@ fn git_head_has_tag(root: &Path) -> bool {
 }
 
 fn git_output<const N: usize>(root: &Path, args: [&str; N]) -> Option<String> {
-    let output = std::process::Command::new("rtk")
-        .arg("git")
+    let output = crate::cmd::tool_command("git")
         .arg("-C")
         .arg(root)
         .args(args)
@@ -336,8 +333,7 @@ fn developer_id_codesign(
     binary: &Path,
 ) -> anyhow::Result<()> {
     run(
-        std::process::Command::new("rtk")
-            .arg("codesign")
+        crate::cmd::tool_command("codesign")
             .arg("--force")
             .arg("--sign")
             .arg(identity)

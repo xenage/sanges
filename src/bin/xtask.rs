@@ -2,6 +2,8 @@
 mod app;
 #[path = "xtask/cargo_ops.rs"]
 mod cargo_ops;
+#[path = "xtask/cmd.rs"]
+mod cmd;
 #[path = "xtask/host.rs"]
 mod host;
 #[path = "xtask/runtime.rs"]

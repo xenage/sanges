@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use anyhow::{Context, ensure};
 
@@ -7,8 +7,7 @@ pub(super) fn maybe_init_submodules(root: &Path) -> anyhow::Result<()> {
     if !root.join(".git").exists() {
         return Ok(());
     }
-    let status = Command::new("rtk")
-        .arg("git")
+    let status = crate::cmd::tool_command("git")
         .arg("-C")
         .arg(root)
         .args([

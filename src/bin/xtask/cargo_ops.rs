@@ -12,8 +12,8 @@ use super::signing;
 use super::types::{Profile, repo_root};
 
 pub(super) fn cargo_build(root: &Path, profile: Profile, bins: &[&str]) -> anyhow::Result<()> {
-    let mut command = Command::new("rtk");
-    command.arg("cargo").arg("build");
+    let mut command = crate::cmd::tool_command("cargo");
+    command.arg("build");
     if let Some(flag) = profile.cargo_flag() {
         command.arg(flag);
     }
@@ -30,8 +30,8 @@ pub(super) fn cargo_test(
     e2e_binary: Option<(&str, &Path)>,
     trailing_args: &[&str],
 ) -> anyhow::Result<()> {
-    let mut command = Command::new("rtk");
-    command.arg("cargo").arg("test");
+    let mut command = crate::cmd::tool_command("cargo");
+    command.arg("test");
     if let Some(flag) = profile.cargo_flag() {
         command.arg(flag);
     }

@@ -154,9 +154,8 @@ fn base_command(subcommand: &str, settings: &DeveloperIdSettings) -> anyhow::Res
         settings.apple_app_specific_password.as_deref(),
     )?;
     let team_id = settings.required("TEAM_ID", settings.team_id.as_deref())?;
-    let mut command = Command::new("rtk");
+    let mut command = crate::cmd::tool_command("xcrun");
     command
-        .arg("xcrun")
         .arg("notarytool")
         .arg(subcommand)
         .arg("--apple-id")

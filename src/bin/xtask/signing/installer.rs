@@ -26,8 +26,7 @@ pub(super) fn build_unsigned_pkg(
     pkg: &Path,
 ) -> anyhow::Result<()> {
     run(
-        std::process::Command::new("rtk")
-            .arg("pkgbuild")
+        crate::cmd::tool_command("pkgbuild")
             .arg("--root")
             .arg(install_root)
             .arg("--identifier")
@@ -51,8 +50,7 @@ pub(super) fn build_signed_pkg(
     keychain: &Path,
 ) -> anyhow::Result<()> {
     run(
-        std::process::Command::new("rtk")
-            .arg("pkgbuild")
+        crate::cmd::tool_command("pkgbuild")
             .arg("--root")
             .arg(install_root)
             .arg("--identifier")
@@ -74,8 +72,7 @@ pub(super) fn build_signed_pkg(
 
 pub(super) fn staple_ticket(path: &Path) -> anyhow::Result<()> {
     run(
-        std::process::Command::new("rtk")
-            .arg("xcrun")
+        crate::cmd::tool_command("xcrun")
             .arg("stapler")
             .arg("staple")
             .arg(path),
