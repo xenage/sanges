@@ -240,6 +240,8 @@ pub fn validate_host_process_binary(host_binary: &Path) -> Result<()> {
     {
         validate_macos_host_binary(host_binary)?;
     }
+    #[cfg(not(target_os = "macos"))]
+    let _ = host_binary;
     Ok(())
 }
 

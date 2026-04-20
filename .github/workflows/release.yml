@@ -56,8 +56,6 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install llvm lld xz e2fsprogs gnupg zig
-          brew tap slp/krun
-          brew install krunvm
 
       - name: Build standalone binary
         run: |

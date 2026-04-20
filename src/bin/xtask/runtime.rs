@@ -158,19 +158,19 @@ pub(super) fn guest_rootfs_path(root: &Path, platform: Platform) -> PathBuf {
 
 fn ensure_platform_runtime_support(platform: Platform, lib_dir: &Path) -> anyhow::Result<()> {
     if platform.os == PlatformOs::Macos {
-        ensure_macos_libkrunfw(lib_dir)?;
+        copy_optional_macos_libkrunfw(lib_dir)?;
     }
     Ok(())
 }
 
-fn ensure_macos_libkrunfw(lib_dir: &Path) -> anyhow::Result<()> {
+fn copy_optional_macos_libkrunfw(lib_dir: &Path) -> anyhow::Result<()> {
     let target = lib_dir.join("libkrunfw.dylib");
     if target.is_file() {
         return Ok(());
     }
-    let source = find_macos_libkrunfw().context(
-        "missing libkrunfw.dylib for macOS runtime bundle; install a prebuilt libkrunfw (for example via Homebrew) or provide it in third_party/runtime/<platform>/lib",
-    )?;
+    let Some(source) = find_macos_libkrunfw() else {
+        return Ok(());
+    };
     fs::copy(&source, &target).with_context(|| {
         format!(
             "copying libkrunfw runtime support {} into {}",
@@ -278,6 +278,9 @@ fn build_libkrun_from_source(
     let libkrun_root = ensure_upstream_checkout(root, "third_party/upstream/libkrun", "Makefile")?;
     let mut make = crate::cmd::tool_command("make");
     make.arg("-C").arg(&libkrun_root);
+    // build-local.sh points Cargo at a shared temp target dir, but the upstream
+    // Makefile expects artifacts under its local ./target tree.
+    make.env_remove("CARGO_TARGET_DIR");
     match platform.os {
         PlatformOs::Macos => make.arg("EFI=1"),
         PlatformOs::Linux => make.arg("BLK=1"),

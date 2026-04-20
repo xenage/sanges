@@ -95,9 +95,13 @@ fn apply_secure_bootstrap(config: &LibkrunRunnerConfig) -> Result<()> {
         isolate_user_namespace()?;
         isolate_mount_and_network()?;
         mount_private_tmp()?;
-        env::set_var("TMPDIR", "/tmp");
-        env::set_var("TEMP", "/tmp");
-        env::set_var("TMP", "/tmp");
+        // The secure runner performs this bootstrap before starting any threads,
+        // so updating process-global temp vars here is safe.
+        unsafe {
+            env::set_var("TMPDIR", "/tmp");
+            env::set_var("TEMP", "/tmp");
+            env::set_var("TMP", "/tmp");
+        }
         close_extra_fds()?;
         let _ = config;
         Ok(())
