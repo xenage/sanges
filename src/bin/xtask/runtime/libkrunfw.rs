@@ -7,23 +7,25 @@ use anyhow::{Context, ensure};
 use super::super::types::{Platform, PlatformArch, PlatformOs};
 use super::submodules::ensure_upstream_checkout;
 
-const LINUX_X86_64_LIBKRUNFW_NAME: &str = "libkrunfw.so.5";
+const LINUX_LIBKRUNFW_NAME: &str = "libkrunfw.so.5";
+const MACOS_AARCH64_LIBKRUNFW_NAME: &str = "libkrunfw.5.dylib";
 
 pub(super) fn maybe_build_libkrunfw_support(
     root: &Path,
     platform: Platform,
     runtime_dir: &Path,
 ) -> anyhow::Result<()> {
-    if !matches!(
-        platform,
+    match platform {
         Platform {
             os: PlatformOs::Linux,
             arch: PlatformArch::X86_64,
-        }
-    ) {
-        return Ok(());
+        } => build_linux_libkrunfw(root, runtime_dir, None),
+        Platform {
+            os: PlatformOs::Linux,
+            arch: PlatformArch::Aarch64,
+        } => build_linux_libkrunfw(root, runtime_dir, Some("arm64")),
+        _ => Ok(()),
     }
-    build_linux_x86_64_libkrunfw(root, runtime_dir)
 }
 
 pub(super) fn required_runtime_support_files(platform: Platform) -> &'static [&'static str] {
@@ -31,17 +33,73 @@ pub(super) fn required_runtime_support_files(platform: Platform) -> &'static [&'
         Platform {
             os: PlatformOs::Linux,
             arch: PlatformArch::X86_64,
-        } => &[LINUX_X86_64_LIBKRUNFW_NAME],
+        }
+        | Platform {
+            os: PlatformOs::Linux,
+            arch: PlatformArch::Aarch64,
+        } => &[LINUX_LIBKRUNFW_NAME],
         _ => &[],
     }
 }
 
-fn build_linux_x86_64_libkrunfw(root: &Path, runtime_dir: &Path) -> anyhow::Result<()> {
+pub(super) fn ensure_macos_aarch64_libkrunfw(root: &Path, lib_dir: &Path) -> anyhow::Result<()> {
+    let target = lib_dir.join(MACOS_AARCH64_LIBKRUNFW_NAME);
+    let legacy = lib_dir.join("libkrunfw.dylib");
+    if target.is_file() {
+        if legacy.is_file() {
+            fs::remove_file(&legacy)
+                .with_context(|| format!("removing duplicate {}", legacy.display()))?;
+        }
+        return Ok(());
+    }
+    if legacy.is_file() {
+        fs::rename(&legacy, &target).with_context(|| {
+            format!(
+                "renaming bundled macOS libkrunfw {} to {}",
+                legacy.display(),
+                target.display()
+            )
+        })?;
+        return Ok(());
+    }
+
+    let source = [
+        root.join("third_party/runtime/macos-aarch64/lib/libkrunfw.5.dylib"),
+        root.join("third_party/runtime/macos-aarch64/lib/libkrunfw.dylib"),
+        PathBuf::from("/opt/homebrew/opt/libkrunfw/lib/libkrunfw.5.dylib"),
+        PathBuf::from("/usr/local/opt/libkrunfw/lib/libkrunfw.5.dylib"),
+        PathBuf::from("/opt/homebrew/lib/libkrunfw.5.dylib"),
+        PathBuf::from("/usr/local/lib/libkrunfw.5.dylib"),
+        PathBuf::from("/opt/homebrew/lib/libkrunfw.dylib"),
+        PathBuf::from("/usr/local/lib/libkrunfw.dylib"),
+    ]
+    .into_iter()
+    .find(|path| path.is_file())
+    .context("missing macOS aarch64 libkrunfw runtime support")?;
+
+    fs::copy(&source, &target).with_context(|| {
+        format!(
+            "copying macOS aarch64 libkrunfw {} into {}",
+            source.display(),
+            target.display()
+        )
+    })?;
+    Ok(())
+}
+
+fn build_linux_libkrunfw(
+    root: &Path,
+    runtime_dir: &Path,
+    arch: Option<&'static str>,
+) -> anyhow::Result<()> {
     let libkrunfw_root =
         ensure_upstream_checkout(root, "third_party/upstream/libkrunfw", "Makefile")?;
     let mut make = crate::cmd::tool_command("make");
     make.arg("-C").arg(&libkrunfw_root);
     make.arg("MAKEFLAGS=");
+    if let Some(arch) = arch {
+        make.arg(format!("ARCH={arch}"));
+    }
     make.env_remove("CARGO_TARGET_DIR");
     super::super::cargo_ops::run(
         make,
@@ -51,7 +109,7 @@ fn build_linux_x86_64_libkrunfw(root: &Path, runtime_dir: &Path) -> anyhow::Resu
     let built = find_built_libkrunfw(&libkrunfw_root)?;
     let lib_dir = runtime_dir.join("lib");
     fs::create_dir_all(&lib_dir).with_context(|| format!("creating {}", lib_dir.display()))?;
-    let target = lib_dir.join(LINUX_X86_64_LIBKRUNFW_NAME);
+    let target = lib_dir.join(LINUX_LIBKRUNFW_NAME);
     fs::copy(&built, &target).with_context(|| {
         format!(
             "copying {} into runtime bundle as {}",

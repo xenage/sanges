@@ -5,10 +5,14 @@ mod loader;
 mod qemu_hvf;
 pub mod runner;
 
+#[cfg(target_os = "macos")]
+use std::ffi::OsStr;
 use std::fs::File;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
+#[cfg(target_os = "macos")]
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::mpsc::{RecvTimeoutError, sync_channel};
@@ -241,6 +245,11 @@ async fn spawn_runner_process(
     let stderr = log_file
         .try_clone()
         .map_err(|error| SandboxError::io("cloning libkrun runner log", error))?;
+    #[cfg(target_os = "macos")]
+    if let Some(bundle_dir) = request.guest.libkrun_library.parent() {
+        prepend_command_env_path(&mut command, "DYLD_LIBRARY_PATH", bundle_dir);
+        prepend_command_env_path(&mut command, "DYLD_FALLBACK_LIBRARY_PATH", bundle_dir);
+    }
     command
         .stdin(Stdio::null())
         .stdout(Stdio::from(log_file))
@@ -276,6 +285,16 @@ async fn spawn_runner_process(
         return Err(error);
     }
     Ok(child)
+}
+
+#[cfg(target_os = "macos")]
+fn prepend_command_env_path(command: &mut tokio::process::Command, name: &str, prefix: &Path) {
+    let mut value = prefix.as_os_str().to_os_string();
+    if let Some(existing) = std::env::var_os(name).filter(|value| !value.is_empty()) {
+        value.push(OsStr::new(":"));
+        value.push(existing);
+    }
+    command.env(name, value);
 }
 
 struct StartupGate {

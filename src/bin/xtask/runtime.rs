@@ -23,8 +23,8 @@ use super::types::{
     RuntimeBundle, RuntimeBundleSource, absolutize, target_root,
 };
 pub(super) use guest_fingerprint::{guest_artifacts_stale, write_guest_artifact_fingerprint};
-use libkrunfw::maybe_build_libkrunfw_support;
-use macos_hvf::{build_macos_x86_64_hvf_runtime, copy_optional_macos_libkrunfw};
+use libkrunfw::{ensure_macos_aarch64_libkrunfw, maybe_build_libkrunfw_support};
+use macos_hvf::build_macos_x86_64_hvf_runtime;
 use source_build::{
     macos_cc_linux_value, patch_libkrun_sources, prebuilt_runtime_bundle_ready,
     preferred_host_clang, preferred_ld_lld, preferred_libclang_dir, prepend_env_path,
@@ -174,12 +174,12 @@ pub(super) fn guest_rootfs_path(root: &Path, platform: Platform) -> PathBuf {
 }
 
 fn ensure_platform_runtime_support(
-    _: &Path,
+    root: &Path,
     platform: Platform,
     lib_dir: &Path,
 ) -> anyhow::Result<()> {
     if platform.os == PlatformOs::Macos && platform.arch == PlatformArch::Aarch64 {
-        copy_optional_macos_libkrunfw(lib_dir)?;
+        ensure_macos_aarch64_libkrunfw(root, lib_dir)?;
     }
     Ok(())
 }

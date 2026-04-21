@@ -24,32 +24,6 @@ pub(super) fn build_macos_x86_64_hvf_runtime(
     Ok(())
 }
 
-pub(super) fn copy_optional_macos_libkrunfw(lib_dir: &Path) -> anyhow::Result<()> {
-    let target = lib_dir.join("libkrunfw.dylib");
-    if target.is_file() {
-        return Ok(());
-    }
-    let Some(source) = [
-        "/opt/homebrew/lib/libkrunfw.dylib",
-        "/usr/local/lib/libkrunfw.dylib",
-        "/opt/homebrew/lib/libkrunfw.5.dylib",
-        "/usr/local/lib/libkrunfw.5.dylib",
-    ]
-    .into_iter()
-    .map(PathBuf::from)
-    .find(|path| path.is_file()) else {
-        return Ok(());
-    };
-    fs::copy(&source, &target).with_context(|| {
-        format!(
-            "copying libkrunfw runtime support {} into {}",
-            source.display(),
-            target.display()
-        )
-    })?;
-    Ok(())
-}
-
 fn copy_macos_runtime_firmware(root: &Path, share_dir: &Path) -> anyhow::Result<()> {
     let target = share_dir.join("KRUN_EFI.silent.fd");
     if target.is_file() {
