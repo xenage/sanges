@@ -62,9 +62,10 @@ e2e_run_capture() {
   local status=0
   e2e_begin_group "$label"
   e2e_log_meta "command: $display"
-  if ! output="$("$runner" "$@" 2>&1)"; then
-    status=$?
-  fi
+  set +e
+  output="$("$runner" "$@" 2>&1)"
+  status=$?
+  set -e
   e2e_log_output "$output"
   e2e_end_group
   if [[ "$status" -ne 0 ]]; then
@@ -84,9 +85,10 @@ e2e_run_capture_with_stdin() {
   local status=0
   e2e_begin_group "$label"
   e2e_log_meta "command: $display"
-  if ! output="$(printf '%s' "$stdin_payload" | "$runner" "$@" 2>&1)"; then
-    status=$?
-  fi
+  set +e
+  output="$(printf '%s' "$stdin_payload" | "$runner" "$@" 2>&1)"
+  status=$?
+  set -e
   e2e_log_output "$output"
   e2e_end_group
   if [[ "$status" -ne 0 ]]; then
