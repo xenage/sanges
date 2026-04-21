@@ -93,9 +93,12 @@ s.close()
 PY
 )"
 ENDPOINT="ws://127.0.0.1:${PORT}"
+HOST_OS="$(uname -s)"
+HOST_ARCH="$(uname -m)"
 e2e_log_value "standalone binary" "$RUN_BIN"
 e2e_log_value "state dir" "$STATE_DIR"
 e2e_log_value "endpoint" "$ENDPOINT"
+e2e_log_value "host platform" "${HOST_OS}/${HOST_ARCH}"
 
 run_sagens() {
   env \
@@ -195,6 +198,14 @@ PS_OUT="$(e2e_run_capture "Show BOX table" "sagens box ps" run_sagens box ps)"
 assert_contains "$PS_OUT" "$BOX_ID"
 assert_contains "$PS_OUT" "CREATED"
 
+if [[ "$HOST_OS" == "Linux" && "$HOST_ARCH" == "x86_64" ]]; then
+  # libkrun maps raw x86_64 kernels at 0x8000_0000, so the Linux full e2e
+  # needs more than the generic 512 MiB default before first boot.
+  SET_MEMORY_OUT="$(e2e_run_capture "Tune BOX RAM for Linux x86_64" "sagens box set $BOX_ID memory_mb 2304" run_sagens box set "$BOX_ID" memory_mb 2304)"
+  assert_contains "$SET_MEMORY_OUT" "$BOX_ID"
+  assert_contains "$SET_MEMORY_OUT" "2.2GiB"
+fi
+
 START_BOX_OUT="$(e2e_run_capture "Start BOX" "sagens box start $BOX_ID" run_sagens box start "$BOX_ID")"
 assert_contains "$START_BOX_OUT" "$BOX_ID"
 assert_contains "$START_BOX_OUT" "RUNNING"
@@ -217,6 +228,7 @@ pwd
 printf "shell-i-ok\n"
 exit
 EOF
+)"
 BASH_I_OUT="$(e2e_run_capture_with_stdin "Run interactive bash in BOX" "sagens box exec $BOX_ID bash -i" run_sagens "$BASH_I_INPUT" box exec "$BOX_ID" bash -i)"
 assert_contains "$BASH_I_OUT" "/workspace"
 assert_contains "$BASH_I_OUT" "shell-i-ok"
@@ -228,6 +240,7 @@ import sys
 print(json.dumps({"interactive": True, "major": sys.version_info[0]}))
 raise SystemExit
 EOF
+)"
 PY_I_OUT="$(e2e_run_capture_with_stdin "Run interactive python in BOX" "sagens box exec $BOX_ID python -i" run_sagens "$PY_I_INPUT" box exec "$BOX_ID" python -i)"
 assert_contains "$PY_I_OUT" '"interactive": true'
 assert_contains "$PY_I_OUT" '"major": 3'

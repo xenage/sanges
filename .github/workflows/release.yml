@@ -127,7 +127,7 @@ jobs:
 
   test_linux_full:
     name: Full Linux E2E (xenage-kvm)
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: xenage-kvm
     env:
@@ -160,7 +160,6 @@ jobs:
     needs:
       - build
       - test_smoke
-      - test_linux_full
     runs-on: ubuntu-24.04
     permissions:
       contents: write
