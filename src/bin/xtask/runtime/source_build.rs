@@ -7,6 +7,7 @@ use std::process::Command;
 use anyhow::{Context, ensure};
 
 use super::super::types::{Platform, PlatformArch, PlatformOs};
+use super::libkrunfw::required_runtime_support_files;
 
 pub(super) struct SourcePatchGuards {
     _guards: Vec<SourcePatchGuard>,
@@ -175,10 +176,15 @@ pub(super) fn prebuilt_runtime_bundle_ready(
     if !libkrun.is_file() {
         return Ok(false);
     }
-    if platform.os != PlatformOs::Macos {
-        return Ok(true);
+    for file_name in required_runtime_support_files(platform) {
+        if !lib_dir.join(file_name).is_file() {
+            return Ok(false);
+        }
     }
-    runtime_support_matches_platform(lib_dir, platform)
+    if platform.os == PlatformOs::Macos {
+        return runtime_support_matches_platform(lib_dir, platform);
+    }
+    Ok(true)
 }
 
 fn runtime_support_matches_platform(lib_dir: &Path, platform: Platform) -> anyhow::Result<bool> {

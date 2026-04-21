@@ -1,9 +1,9 @@
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::slice;
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use libloading::{Library, Symbol};
 use tokio::fs;
 use tokio::io::AsyncReadExt;
@@ -168,6 +168,13 @@ async fn detect_kernel_format(
     if path.as_os_str().is_empty() {
         return Ok(fallback);
     }
+    if path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name == "libkrunfw-kernel.raw")
+    {
+        return Ok(fallback);
+    }
     let mut file = match fs::File::open(path).await {
         Ok(file) => file,
         Err(_) => return Ok(fallback),
@@ -206,17 +213,13 @@ fn detect_kernel_format_from_probe(probe: &[u8], fallback: GuestKernelFormat) ->
     fallback
 }
 
-#[cfg(target_os = "macos")]
 async fn resolve_kernel_path(
     bundle_dir: &Path,
     libkrun_library: &Path,
     kernel_image: PathBuf,
     kernel_format: GuestKernelFormat,
 ) -> Result<(PathBuf, GuestKernelFormat)> {
-    if matches!(
-        std::env::var("SAGENS_USE_LIBKRUNFW_KERNEL").ok().as_deref(),
-        Some("0" | "false" | "no" | "off")
-    ) {
+    if !libkrunfw_kernel_enabled() {
         return Ok((kernel_image, kernel_format));
     }
     let libkrunfw = match find_libkrunfw(libkrun_library) {
@@ -227,20 +230,21 @@ async fn resolve_kernel_path(
     Ok((extracted, GuestKernelFormat::Raw))
 }
 
-#[cfg(not(target_os = "macos"))]
-async fn resolve_kernel_path(
-    _: &Path,
-    _: &Path,
-    kernel_image: PathBuf,
-    kernel_format: GuestKernelFormat,
-) -> Result<(PathBuf, GuestKernelFormat)> {
-    Ok((kernel_image, kernel_format))
+fn libkrunfw_kernel_enabled() -> bool {
+    !matches!(
+        std::env::var("SAGENS_USE_LIBKRUNFW_KERNEL").ok().as_deref(),
+        Some("0" | "false" | "no" | "off")
+    )
 }
 
-#[cfg(target_os = "macos")]
 fn find_libkrunfw(libkrun_library: &Path) -> Option<PathBuf> {
     let directory = libkrun_library.parent()?;
-    for name in ["libkrunfw.5.dylib", "libkrunfw.dylib"] {
+    for name in [
+        "libkrunfw.so.5",
+        "libkrunfw.so",
+        "libkrunfw.5.dylib",
+        "libkrunfw.dylib",
+    ] {
         let candidate = directory.join(name);
         if candidate.exists() {
             return Some(candidate);
@@ -249,12 +253,11 @@ fn find_libkrunfw(libkrun_library: &Path) -> Option<PathBuf> {
     None
 }
 
-#[cfg(target_os = "macos")]
 async fn extract_libkrunfw_kernel(bundle_dir: &Path, libkrunfw: &Path) -> Result<PathBuf> {
     fs::create_dir_all(bundle_dir)
         .await
         .map_err(|error| SandboxError::io("creating embedded bundle directory", error))?;
-    let path = bundle_dir.join("libkrunfw-kernel.Image");
+    let path = bundle_dir.join("libkrunfw-kernel.raw");
     if path.exists() {
         return Ok(path);
     }
@@ -265,17 +268,16 @@ async fn extract_libkrunfw_kernel(bundle_dir: &Path, libkrunfw: &Path) -> Result
     Ok(path)
 }
 
-#[cfg(target_os = "macos")]
 fn read_libkrunfw_kernel(libkrunfw: &Path) -> Result<Vec<u8>> {
     type KrunfwGetKernel =
-        unsafe extern "C" fn(*mut usize, *mut usize, *mut usize) -> *mut std::ffi::c_char;
+        unsafe extern "C" fn(*mut u64, *mut u64, *mut usize) -> *mut std::ffi::c_char;
 
     let library = unsafe { Library::new(libkrunfw) }
         .map_err(|error| SandboxError::backend(format!("loading libkrunfw: {error}")))?;
     let symbol: Symbol<'_, KrunfwGetKernel> = unsafe { library.get(b"krunfw_get_kernel\0") }
         .map_err(|error| SandboxError::backend(format!("loading krunfw_get_kernel: {error}")))?;
-    let mut load_addr = 0usize;
-    let mut entry_addr = 0usize;
+    let mut load_addr = 0u64;
+    let mut entry_addr = 0u64;
     let mut size = 0usize;
     let pointer = unsafe { symbol(&mut load_addr, &mut entry_addr, &mut size) };
     if pointer.is_null() || size == 0 {

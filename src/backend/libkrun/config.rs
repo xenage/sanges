@@ -33,6 +33,19 @@ pub struct LibkrunRunnerConfig {
 impl LibkrunRunnerConfig {
     pub fn kernel_cmdline(&self) -> String {
         let max_open_files = self.max_processes.saturating_mul(16).clamp(256, 4096);
+        if cfg!(target_os = "linux") && self.uses_krun_init() {
+            return format!(
+                "reboot=k panic=-1 panic_print=0 nomodule console=hvc0 rootfstype=virtiofs rw quiet no-kvmapf init=/init.krun sandbox.workspace_device=/dev/vdb sandbox.tmpfs_mib={} sandbox.uid={} sandbox.gid={} sandbox.max_processes={} sandbox.max_open_files={} sandbox.max_file_size_bytes={} sandbox.rpc_port={} sandbox.network_enabled={}",
+                self.tmpfs_mib,
+                self.guest_uid,
+                self.guest_gid,
+                self.max_processes,
+                max_open_files,
+                16 * 1024 * 1024u64,
+                self.guest_vsock_port,
+                if self.network_enabled { 1 } else { 0 },
+            );
+        }
         #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
         let rpc_transport = " sandbox.rpc_transport=virtio-serial";
         #[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]
@@ -49,6 +62,13 @@ impl LibkrunRunnerConfig {
             if self.network_enabled { 1 } else { 0 },
             rpc_transport,
         )
+    }
+
+    fn uses_krun_init(&self) -> bool {
+        self.kernel_image
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name == "libkrunfw-kernel.raw")
     }
 }
 
