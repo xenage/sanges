@@ -68,10 +68,10 @@ e2e_run_capture() {
   set -e
   e2e_log_output "$output"
   e2e_end_group
+  printf '%s' "$output"
   if [[ "$status" -ne 0 ]]; then
     return "$status"
   fi
-  printf '%s' "$output"
 }
 
 e2e_run_capture_with_stdin() {
@@ -91,8 +91,8 @@ e2e_run_capture_with_stdin() {
   set -e
   e2e_log_output "$output"
   e2e_end_group
+  printf '%s' "$output"
   if [[ "$status" -ne 0 ]]; then
     return "$status"
   fi
-  printf '%s' "$output"
 }
