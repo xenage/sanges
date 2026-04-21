@@ -35,7 +35,7 @@ impl LibkrunRunnerConfig {
         let max_open_files = self.max_processes.saturating_mul(16).clamp(256, 4096);
         if cfg!(target_os = "linux") && self.uses_krun_init() {
             return format!(
-                "reboot=k panic=-1 panic_print=0 nomodule console=hvc0 rootfstype=virtiofs rw quiet no-kvmapf init=/init.krun sandbox.workspace_device=/dev/vdb sandbox.tmpfs_mib={} sandbox.uid={} sandbox.gid={} sandbox.max_processes={} sandbox.max_open_files={} sandbox.max_file_size_bytes={} sandbox.rpc_port={} sandbox.network_enabled={}",
+                "reboot=k panic=-1 panic_print=0 nomodule console=hvc0 root=/dev/root rootfstype=virtiofs rw quiet no-kvmapf init=/init.krun sandbox.workspace_device=/dev/vdb sandbox.tmpfs_mib={} sandbox.uid={} sandbox.gid={} sandbox.max_processes={} sandbox.max_open_files={} sandbox.max_file_size_bytes={} sandbox.rpc_port={} sandbox.network_enabled={}",
                 self.tmpfs_mib,
                 self.guest_uid,
                 self.guest_gid,
@@ -156,6 +156,7 @@ mod tests {
         let cmdline = config.kernel_cmdline();
         assert!(config.boots_via_krun_init());
         assert!(cmdline.contains("init=/init.krun"));
+        assert!(cmdline.contains("root=/dev/root"));
         assert!(cmdline.contains("rootfstype=virtiofs"));
         assert!(cmdline.contains("sandbox.workspace_device=/dev/vdb"));
         assert!(cmdline.contains("sandbox.rpc_port=11000"));
