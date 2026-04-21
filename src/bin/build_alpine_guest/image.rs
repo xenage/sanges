@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
 use ext4_lwext4::{Ext4Fs, FileBlockDevice, MkfsOptions, OpenFlags, mkfs};
-use flate2::read::GzDecoder;
+use flate2::read::MultiGzDecoder;
 use tar::Archive;
 use tempfile::{TempDir, tempdir_in};
 
@@ -38,7 +38,7 @@ pub(super) fn unpack_with_tar(archive_path: &Path, destination: &Path) -> anyhow
     fs::create_dir_all(destination)?;
     let archive =
         File::open(archive_path).with_context(|| format!("opening {}", archive_path.display()))?;
-    let decoder = GzDecoder::new(archive);
+    let decoder = MultiGzDecoder::new(archive);
     let mut archive = Archive::new(decoder);
     archive.unpack(destination).with_context(|| {
         format!(
@@ -218,4 +218,82 @@ fn copy_staged_partition(
     io::copy(&mut staging, &mut image)
         .with_context(|| format!("copying staged ext4 image into {}", image_path.display()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::File;
+    use std::io::Write;
+    use std::path::Path;
+
+    use flate2::Compression;
+    use flate2::write::GzEncoder;
+    use tar::{Builder, Header};
+    use tempfile::tempdir;
+
+    use super::unpack_with_tar;
+
+    #[test]
+    fn unpacks_multi_member_gzip_tar() -> anyhow::Result<()> {
+        let temp_dir = tempdir()?;
+        let archive_path = temp_dir.path().join("rootfs.tar.gz");
+        let output_dir = temp_dir.path().join("rootfs");
+
+        let tar_bytes = build_tar(&[
+            (
+                "etc/inittab",
+                b"::sysinit:/bin/mount -t proc proc /proc\n" as &[u8],
+            ),
+            (
+                "usr/local/bin/sagens-guest-agent",
+                b"#!/bin/sh\necho ok\n" as &[u8],
+            ),
+        ])?;
+        write_multi_member_gzip(&archive_path, &tar_bytes, 1024)?;
+
+        unpack_with_tar(&archive_path, &output_dir)?;
+
+        assert_eq!(
+            std::fs::read_to_string(output_dir.join("etc/inittab"))?,
+            "::sysinit:/bin/mount -t proc proc /proc\n"
+        );
+        assert_eq!(
+            std::fs::read(output_dir.join("usr/local/bin/sagens-guest-agent"))?,
+            b"#!/bin/sh\necho ok\n"
+        );
+        Ok(())
+    }
+
+    fn build_tar(entries: &[(&str, &[u8])]) -> anyhow::Result<Vec<u8>> {
+        let mut tar_bytes = Vec::new();
+        {
+            let mut builder = Builder::new(&mut tar_bytes);
+            for (path, data) in entries {
+                let mut header = Header::new_gnu();
+                header.set_path(path)?;
+                header.set_mode(0o755);
+                header.set_size(data.len() as u64);
+                header.set_cksum();
+                builder.append(&header, *data)?;
+            }
+            builder.finish()?;
+        }
+        Ok(tar_bytes)
+    }
+
+    fn write_multi_member_gzip(path: &Path, bytes: &[u8], split_at: usize) -> anyhow::Result<()> {
+        assert!(split_at < bytes.len());
+        let first = gzip_member(&bytes[..split_at])?;
+        let second = gzip_member(&bytes[split_at..])?;
+        let mut archive = File::create(path)?;
+        archive.write_all(&first)?;
+        archive.write_all(&second)?;
+        Ok(())
+    }
+
+    fn gzip_member(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(bytes)?;
+        Ok(encoder.finish()?)
+    }
 }

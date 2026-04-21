@@ -3,7 +3,7 @@ use std::io::{self, Read};
 use std::path::Path;
 
 use anyhow::{Context, anyhow, bail, ensure};
-use flate2::read::GzDecoder;
+use flate2::read::MultiGzDecoder;
 use sequoia_openpgp as openpgp;
 use sequoia_openpgp::KeyHandle;
 use sequoia_openpgp::parse::Parse;
@@ -21,7 +21,7 @@ pub(super) fn extract_member_from_tar_gz(
 ) -> anyhow::Result<()> {
     let archive =
         File::open(archive_path).with_context(|| format!("opening {}", archive_path.display()))?;
-    let decoder = GzDecoder::new(archive);
+    let decoder = MultiGzDecoder::new(archive);
     let mut archive = Archive::new(decoder);
     for entry in archive
         .entries()
@@ -160,8 +160,16 @@ impl VerificationHelper for DetachedSignatureHelper {
 
 #[cfg(test)]
 mod tests {
-    use super::archive_member_matches;
+    use std::fs::{self, File};
+    use std::io::Write;
     use std::path::Path;
+
+    use flate2::Compression;
+    use flate2::write::GzEncoder;
+    use tar::{Builder, Header};
+    use tempfile::tempdir;
+
+    use super::{archive_member_matches, extract_member_from_tar_gz};
 
     #[test]
     fn matches_member_with_dot_prefix() {
@@ -173,5 +181,60 @@ mod tests {
             Path::new("./boot/vmlinuz-virt"),
             Path::new("boot/vmlinuz-virt")
         ));
+    }
+
+    #[test]
+    fn extracts_from_multi_member_gzip_tar() -> anyhow::Result<()> {
+        let temp_dir = tempdir()?;
+        let archive_path = temp_dir.path().join("APKINDEX-main.tar.gz");
+        let output_path = temp_dir.path().join("APKINDEX");
+
+        let tar_bytes = build_tar(&[
+            (
+                ".SIGN.RSA.alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub",
+                b"sig" as &[u8],
+            ),
+            ("DESCRIPTION", b"desc" as &[u8]),
+            ("APKINDEX", b"package-index" as &[u8]),
+        ])?;
+        write_multi_member_gzip(&archive_path, &tar_bytes, 2048)?;
+
+        extract_member_from_tar_gz(&archive_path, "APKINDEX", &output_path)?;
+
+        assert_eq!(fs::read(&output_path)?, b"package-index");
+        Ok(())
+    }
+
+    fn build_tar(entries: &[(&str, &[u8])]) -> anyhow::Result<Vec<u8>> {
+        let mut tar_bytes = Vec::new();
+        {
+            let mut builder = Builder::new(&mut tar_bytes);
+            for (path, data) in entries {
+                let mut header = Header::new_gnu();
+                header.set_path(path)?;
+                header.set_mode(0o644);
+                header.set_size(data.len() as u64);
+                header.set_cksum();
+                builder.append(&header, *data)?;
+            }
+            builder.finish()?;
+        }
+        Ok(tar_bytes)
+    }
+
+    fn write_multi_member_gzip(path: &Path, bytes: &[u8], split_at: usize) -> anyhow::Result<()> {
+        assert!(split_at < bytes.len());
+        let first = gzip_member(&bytes[..split_at])?;
+        let second = gzip_member(&bytes[split_at..])?;
+        let mut archive = File::create(path)?;
+        archive.write_all(&first)?;
+        archive.write_all(&second)?;
+        Ok(())
+    }
+
+    fn gzip_member(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(bytes)?;
+        Ok(encoder.finish()?)
     }
 }
