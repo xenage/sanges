@@ -21,12 +21,12 @@ jobs:
         include:
           - os: ubuntu-24.04
             platform: linux-x86_64
-          # - os: ubuntu-24.04-arm
-          #   platform: linux-aarch64
-          # - os: macos-15-intel
-          #   platform: macos-x86_64
-          # - os: macos-14
-          #   platform: macos-aarch64
+          - os: ubuntu-24.04-arm
+            platform: linux-aarch64
+          - os: macos-15-intel
+            platform: macos-x86_64
+          - os: macos-14
+            platform: macos-aarch64
     env:
       ARTIFACT_VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('ci-{0}', github.sha) }}
       BUILD_CACHE_ROOT: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}
@@ -60,20 +60,32 @@ jobs:
             ${{ env.BUILD_CACHE_ROOT }}
           key: release-build-${{ matrix.platform }}
 
+      - name: Restore libkrunfw build cache
+        if: matrix.platform == 'linux-x86_64'
+        uses: actions/cache@v5
+        with:
+          path: |
+            third_party/upstream/libkrunfw/tarballs
+            third_party/upstream/libkrunfw/kernel.c
+            third_party/upstream/libkrunfw/qboot.c
+            third_party/upstream/libkrunfw/initrd.c
+            third_party/upstream/libkrunfw/libkrunfw*.so*
+          key: release-libkrunfw-${{ matrix.platform }}
+
       - name: Install Linux build deps
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y clang lld llvm-dev libclang-dev pkg-config patchelf libc6-dev libelf-dev libssl-dev libncurses-dev bison flex dwarves cpio xz-utils bc kmod python3-pyelftools
 
-      # - name: Install macOS build deps
-      #   if: runner.os == 'macOS'
-      #   run: |
-      #     brew install llvm lld xz zig
+      - name: Install macOS build deps
+        if: runner.os == 'macOS'
+        run: |
+          brew install llvm lld xz zig
 
-      # - name: Install macOS Intel HVF deps
-      #   if: matrix.platform == 'macos-x86_64'
-      #   run: brew install qemu
+      - name: Install macOS Intel HVF deps
+        if: matrix.platform == 'macos-x86_64'
+        run: brew install qemu
 
       - name: Build standalone binary
         run: |
@@ -100,12 +112,12 @@ jobs:
         include:
           - os: ubuntu-24.04
             platform: linux-x86_64
-          # - os: ubuntu-24.04-arm
-          #   platform: linux-aarch64
-          # - os: macos-15-intel
-          #   platform: macos-x86_64
-          # - os: macos-14
-          #   platform: macos-aarch64
+          - os: ubuntu-24.04-arm
+            platform: linux-aarch64
+          - os: macos-15-intel
+            platform: macos-x86_64
+          - os: macos-14
+            platform: macos-aarch64
     env:
       ARTIFACT_VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('ci-{0}', github.sha) }}
     steps:
