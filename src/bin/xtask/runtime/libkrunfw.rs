@@ -24,6 +24,9 @@ pub(super) fn ensure_linux_x86_64_embedded_kernel(
         ensure_upstream_checkout(root, "third_party/upstream/libkrunfw", "Makefile")?;
     let mut make = crate::cmd::tool_command("make");
     make.arg("-C").arg(&libkrunfw_root);
+    // Upstream forwards $(MAKEFLAGS) into a recursive make invocation, which
+    // turns GitHub's implicit "w" flag into a bogus `make w ...` command.
+    make.arg("MAKEFLAGS=");
     make.env_remove("CARGO_TARGET_DIR");
     run(
         make,
