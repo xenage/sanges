@@ -32,7 +32,7 @@ pub(super) fn extract_member_from_tar_gz(
         let path = entry
             .path()
             .with_context(|| format!("reading tar path from {}", archive_path.display()))?;
-        if path.as_ref() != Path::new(member_name) {
+        if !archive_member_matches(path.as_ref(), Path::new(member_name)) {
             continue;
         }
         let mut output = File::create(destination)
@@ -123,6 +123,16 @@ fn decode_hex_nibble(byte: u8) -> anyhow::Result<u8> {
     }
 }
 
+fn archive_member_matches(actual: &Path, expected: &Path) -> bool {
+    if actual == expected {
+        return true;
+    }
+    actual
+        .strip_prefix(".")
+        .map(|path| path == expected)
+        .unwrap_or(false)
+}
+
 struct DetachedSignatureHelper {
     cert: openpgp::Cert,
 }
@@ -145,5 +155,23 @@ impl VerificationHelper for DetachedSignatureHelper {
             }
             _ => Err(anyhow!("unexpected OpenPGP message structure")),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::archive_member_matches;
+    use std::path::Path;
+
+    #[test]
+    fn matches_member_with_dot_prefix() {
+        assert!(archive_member_matches(
+            Path::new("./APKINDEX"),
+            Path::new("APKINDEX")
+        ));
+        assert!(archive_member_matches(
+            Path::new("./boot/vmlinuz-virt"),
+            Path::new("boot/vmlinuz-virt")
+        ));
     }
 }
