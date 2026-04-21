@@ -1,0 +1,90 @@
+apiVersion: actions.github.com/v1alpha1
+kind: AutoscalingRunnerSet
+metadata:
+  name: xenage-kvm
+  namespace: arc-runners
+  labels:
+    actions.github.com/organization: xenage
+    app.kubernetes.io/component: autoscaling-runner-set
+    app.kubernetes.io/name: xenage-kvm
+    app.kubernetes.io/part-of: gha-rs
+    app.kubernetes.io/version: 0.9.3
+spec:
+  githubConfigSecret: pre-defined-secret
+  githubConfigUrl: https://github.com/xenage
+  maxRunners: 3
+  minRunners: 1
+  runnerGroup: Default
+  template:
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: name
+                    operator: In
+                    values:
+                      - london
+                      - irish
+                      - worm
+      containers:
+        - name: runner
+          image: ghcr.io/actions/actions-runner:latest
+          command:
+            - /home/runner/run.sh
+          env:
+            - name: ACTIONS_RUNNER_CONTAINER_HOOKS
+              value: /home/runner/k8s/index.js
+            - name: ACTIONS_RUNNER_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+              value: "false"
+            # Simplest way to make /dev/kvm usable in the runner container.
+            # If you prefer not to run as root, replace this with the host kvm gid
+            # in supplementalGroups and keep the default image user.
+            - name: RUNNER_ALLOW_RUNASROOT
+              value: "1"
+          securityContext:
+            privileged: true
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: true
+          volumeMounts:
+            - mountPath: /home/runner/_work
+              name: work
+            - mountPath: /dev/kvm
+              name: dev-kvm
+      imagePullSecrets:
+        - name: regcred
+      initContainers:
+        - name: kube-init
+          image: ghcr.io/actions/actions-runner:latest
+          command:
+            - sudo
+            - chown
+            - -R
+            - 1001:123
+            - /home/runner/_work
+          volumeMounts:
+            - mountPath: /home/runner/_work
+              name: work
+      restartPolicy: Never
+      serviceAccountName: arc-runner-set-gha-rs-kube-mode
+      volumes:
+        - name: work
+          ephemeral:
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 4Gi
+                storageClassName: local-path
+        - name: dev-kvm
+          hostPath:
+            path: /dev/kvm
+            type: CharDevice

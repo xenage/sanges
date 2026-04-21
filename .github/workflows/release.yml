@@ -90,8 +90,8 @@ jobs:
           path: dist/sagens-${{ env.ARTIFACT_VERSION }}-${{ matrix.platform }}*
           if-no-files-found: error
 
-  test:
-    name: Test (${{ matrix.platform }})
+  test_smoke:
+    name: Smoke (${{ matrix.platform }})
     needs: build
     runs-on: ${{ matrix.os }}
     strategy:
@@ -120,9 +120,38 @@ jobs:
       - name: Restore executable bit
         run: chmod +x "dist/sagens-${ARTIFACT_VERSION}-${{ matrix.platform }}"
 
-      - name: Run standalone full e2e
+      - name: Run standalone smoke e2e
         run: |
           binary="$GITHUB_WORKSPACE/dist/sagens-${ARTIFACT_VERSION}-${{ matrix.platform }}"
+          bash scripts/e2e-standalone-smoke.sh "$binary"
+
+  test_linux_full:
+    name: Full Linux E2E (xenage-kvm)
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+    needs: build
+    runs-on: xenage-kvm
+    env:
+      ARTIFACT_VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('ci-{0}', github.sha) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download built artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: bundle-linux-x86_64
+          path: dist
+
+      - name: Restore executable bit
+        run: chmod +x "dist/sagens-${ARTIFACT_VERSION}-linux-x86_64"
+
+      - name: Verify KVM is available
+        run: |
+          test -c /dev/kvm
+          ls -l /dev/kvm
+
+      - name: Run standalone full e2e
+        run: |
+          binary="$GITHUB_WORKSPACE/dist/sagens-${ARTIFACT_VERSION}-linux-x86_64"
           bash scripts/e2e-standalone.sh "$binary"
 
   release:
@@ -130,7 +159,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     needs:
       - build
-      - test
+      - test_smoke
+      - test_linux_full
     runs-on: ubuntu-24.04
     permissions:
       contents: write
