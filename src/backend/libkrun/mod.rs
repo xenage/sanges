@@ -123,7 +123,7 @@ fn runner_mode() -> RunnerMode {
     match std::env::var(RUNNER_ENV).ok().as_deref() {
         Some(PYTHON_RUNNER_MODE) => RunnerMode::PythonSubprocess,
         Some(SELF_RUNNER_MODE) => RunnerMode::SelfSubprocess,
-        _ if should_use_self_runner_on_macos() => RunnerMode::SelfSubprocess,
+        _ if should_use_self_runner_for_current_binary() => RunnerMode::SelfSubprocess,
         _ => RunnerMode::Thread,
     }
 }
@@ -162,24 +162,18 @@ fn min_memory_mb_for_host_kernel(
     None
 }
 
-fn should_use_self_runner_on_macos() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        let Ok(current_exe) = std::env::current_exe() else {
-            return false;
-        };
-        current_exe
-            .file_stem()
-            .and_then(std::ffi::OsStr::to_str)
-            .is_some_and(is_sagens_self_runner_binary)
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        false
-    }
+fn should_use_self_runner_for_current_binary() -> bool {
+    let Ok(current_exe) = std::env::current_exe() else {
+        return false;
+    };
+    // When the host process is the standalone sagens binary, keep libkrun in a helper process
+    // so guest shutdown/runtime faults cannot take down the daemon itself.
+    current_exe
+        .file_stem()
+        .and_then(std::ffi::OsStr::to_str)
+        .is_some_and(is_sagens_self_runner_binary)
 }
 
-#[cfg(any(target_os = "macos", test))]
 fn is_sagens_self_runner_binary(stem: &str) -> bool {
     stem == "sagens" || stem.starts_with("sagens-")
 }
