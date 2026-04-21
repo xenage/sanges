@@ -3,7 +3,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use tempfile::tempdir;
 
-use super::{KrunInitLog, call_optional_fd, init_log_once, pad_kernel_file_for_mmap};
+use super::kernel::pad_kernel_file_for_mmap;
+use super::{KrunInitLog, call_optional_fd, init_log_once};
 
 static SUCCESS_CALLS: AtomicUsize = AtomicUsize::new(0);
 static FAILURE_CALLS: AtomicUsize = AtomicUsize::new(0);
