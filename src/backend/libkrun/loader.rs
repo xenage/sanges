@@ -32,6 +32,8 @@ type KrunSetKernel = unsafe extern "C" fn(u32, *const i8, u32, *const i8, *const
 type KrunSetFirmware = unsafe extern "C" fn(u32, *const i8) -> i32;
 type KrunSetConsoleOutput = unsafe extern "C" fn(u32, *const i8) -> i32;
 type KrunSetKernelConsole = unsafe extern "C" fn(u32, *const i8) -> i32;
+type KrunSetWorkdir = unsafe extern "C" fn(u32, *const i8) -> i32;
+type KrunSetExec = unsafe extern "C" fn(u32, *const i8, *const *const i8, *const *const i8) -> i32;
 type KrunAddDisk3 = unsafe extern "C" fn(u32, *const i8, *const i8, u32, bool, bool, u32) -> i32;
 type KrunSetRootDiskRemount = unsafe extern "C" fn(u32, *const i8, *const i8, *const i8) -> i32;
 type KrunFn1 = unsafe extern "C" fn(u32) -> i32;
@@ -49,6 +51,8 @@ pub struct Libkrun {
     set_firmware: KrunSetFirmware,
     set_console_output: KrunSetConsoleOutput,
     set_kernel_console: KrunSetKernelConsole,
+    set_workdir: KrunSetWorkdir,
+    set_exec: KrunSetExec,
     add_disk3: KrunAddDisk3,
     set_root_disk_remount: KrunSetRootDiskRemount,
     disable_implicit_vsock: KrunFn1,
@@ -79,6 +83,8 @@ impl Libkrun {
             set_firmware: unsafe { load(&library, b"krun_set_firmware\0") }?,
             set_console_output: unsafe { load(&library, b"krun_set_console_output\0") }?,
             set_kernel_console: unsafe { load(&library, b"krun_set_kernel_console\0") }?,
+            set_workdir: unsafe { load(&library, b"krun_set_workdir\0") }?,
+            set_exec: unsafe { load(&library, b"krun_set_exec\0") }?,
             add_disk3: unsafe { load(&library, b"krun_add_disk3\0") }?,
             set_root_disk_remount: unsafe { load(&library, b"krun_set_root_disk_remount\0") }?,
             disable_implicit_vsock: unsafe { load(&library, b"krun_disable_implicit_vsock\0") }?,
@@ -211,6 +217,36 @@ impl Libkrun {
                 )
             },
             "krun_set_root_disk_remount",
+        )?;
+        if config.boots_via_krun_init() {
+            unsafe { self.configure_krun_init_entrypoint(ctx, config) }?;
+        }
+        Ok(())
+    }
+
+    unsafe fn configure_krun_init_entrypoint(
+        &self,
+        ctx: u32,
+        config: &LibkrunRunnerConfig,
+    ) -> Result<()> {
+        let workdir = CString::new("/").expect("static");
+        let guest_agent = to_cstring(&config.guest_agent_path)?;
+        let argv = [guest_agent.as_ptr().cast(), std::ptr::null()];
+        let envp = [std::ptr::null()];
+        call(
+            unsafe { (self.set_workdir)(ctx, workdir.as_ptr().cast()) },
+            "krun_set_workdir",
+        )?;
+        call(
+            unsafe {
+                (self.set_exec)(
+                    ctx,
+                    guest_agent.as_ptr().cast(),
+                    argv.as_ptr(),
+                    envp.as_ptr(),
+                )
+            },
+            "krun_set_exec",
         )?;
         Ok(())
     }

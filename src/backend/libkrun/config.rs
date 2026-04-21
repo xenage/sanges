@@ -70,6 +70,10 @@ impl LibkrunRunnerConfig {
             .and_then(|name| name.to_str())
             .is_some_and(|name| name == "libkrunfw-kernel.raw")
     }
+
+    pub fn boots_via_krun_init(&self) -> bool {
+        self.uses_krun_init()
+    }
 }
 
 pub fn build_runner_config(request: &BackendLaunchRequest) -> LibkrunRunnerConfig {
