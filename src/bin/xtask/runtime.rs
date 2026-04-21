@@ -1,5 +1,3 @@
-#[path = "runtime/libkrunfw.rs"]
-mod libkrunfw;
 #[path = "runtime/macos_hvf.rs"]
 mod macos_hvf;
 #[path = "runtime/source_build.rs"]
@@ -20,7 +18,6 @@ use super::types::{
     GUEST_AGENT_MANIFEST, Platform, PlatformArch, PlatformOs, Profile, ResolvedArtifacts,
     RuntimeBundle, RuntimeBundleSource, absolutize, target_root,
 };
-use libkrunfw::{ensure_linux_x86_64_embedded_kernel, packaged_kernel_path};
 use macos_hvf::{build_macos_x86_64_hvf_runtime, copy_optional_macos_libkrunfw};
 use source_build::{
     macos_cc_linux_value, patch_libkrun_sources, prebuilt_runtime_bundle_ready,
@@ -83,10 +80,9 @@ pub(super) fn ensure_runtime_bundle(
         }
         PlatformOs::Linux => None,
     };
-    ensure_platform_runtime_support(root, platform, &runtime_dir, &lib_dir)?;
+    ensure_platform_runtime_support(root, platform, &lib_dir)?;
     let runtime_support = collect_runtime_support(&lib_dir, &libkrun)?;
     Ok(RuntimeBundle {
-        bundle_dir: runtime_dir,
         libkrun,
         firmware,
         runtime_support,
@@ -125,8 +121,7 @@ pub(super) fn resolve_artifacts(
     platform: Platform,
     runtime: RuntimeBundle,
 ) -> anyhow::Result<ResolvedArtifacts> {
-    let kernel = packaged_kernel_path(platform, &runtime.bundle_dir)
-        .unwrap_or_else(|| guest_kernel_path(root, platform));
+    let kernel = guest_kernel_path(root, platform);
     let rootfs = guest_rootfs_path(root, platform);
     ensure!(
         kernel.is_file(),
@@ -173,16 +168,12 @@ pub(super) fn guest_rootfs_path(root: &Path, platform: Platform) -> PathBuf {
 }
 
 fn ensure_platform_runtime_support(
-    root: &Path,
+    _: &Path,
     platform: Platform,
-    runtime_dir: &Path,
     lib_dir: &Path,
 ) -> anyhow::Result<()> {
     if platform.os == PlatformOs::Macos && platform.arch == PlatformArch::Aarch64 {
         copy_optional_macos_libkrunfw(lib_dir)?;
-    }
-    if platform.os == PlatformOs::Linux && platform.arch == PlatformArch::X86_64 {
-        ensure_linux_x86_64_embedded_kernel(root, runtime_dir)?;
     }
     Ok(())
 }

@@ -118,16 +118,9 @@ fn discover_default_manifest(repo_root: &Path) -> Option<EmbedManifest> {
     let lib_dir = runtime_dir.join("lib");
     let libkrun = lib_dir.join(platform.2);
     let guest_dir = repo_root.join("artifacts").join(platform.1);
-    let linux_x86_64_embedded_kernel = runtime_dir
-        .join("share")
-        .join("krunkit")
-        .join("libkrunfw-kernel.elf");
-    let kernel = match (target_os.as_str(), target_arch.as_str()) {
-        ("linux", "x86_64") if linux_x86_64_embedded_kernel.is_file() => {
-            linux_x86_64_embedded_kernel
-        }
-        ("macos", _) => guest_dir.join("vmlinuz-virt.pe.gz"),
-        ("linux", _) => guest_dir.join("vmlinuz-virt"),
+    let kernel = match target_os.as_str() {
+        "macos" => guest_dir.join("vmlinuz-virt.pe.gz"),
+        "linux" => guest_dir.join("vmlinuz-virt"),
         _ => return None,
     };
     let rootfs = guest_dir.join("rootfs.raw");

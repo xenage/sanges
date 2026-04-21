@@ -126,7 +126,6 @@ impl Platform {
 
 #[derive(Debug)]
 pub(super) struct RuntimeBundle {
-    pub(super) bundle_dir: PathBuf,
     pub(super) libkrun: PathBuf,
     pub(super) firmware: Option<PathBuf>,
     pub(super) runtime_support: Vec<PathBuf>,

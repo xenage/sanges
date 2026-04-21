@@ -218,10 +218,7 @@ fn default_project_artifact_candidates(kind: &str) -> Vec<PathBuf> {
             vec![root.join("artifacts/alpine-aarch64/vmlinuz-virt.pe.gz")]
         }
         ("kernel", "linux", "aarch64") => vec![root.join("artifacts/alpine-aarch64/vmlinuz-virt")],
-        ("kernel", "linux", "x86_64") => vec![
-            root.join("third_party/runtime/linux-x86_64/share/krunkit/libkrunfw-kernel.elf"),
-            root.join("artifacts/alpine-x86_64/vmlinuz-virt"),
-        ],
+        ("kernel", "linux", "x86_64") => vec![root.join("artifacts/alpine-x86_64/vmlinuz-virt")],
         ("rootfs", "macos", "x86_64") | ("rootfs", "linux", "x86_64") => {
             vec![root.join("artifacts/alpine-x86_64/rootfs.raw")]
         }
