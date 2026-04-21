@@ -27,6 +27,8 @@ pub struct EmbeddedAsset {
 
 include!(concat!(env!("OUT_DIR"), "/embedded_bundle.rs"));
 
+const KERNEL_FORMAT_PROBE_BYTES: usize = 256 * 1024;
+
 pub fn has_embedded_assets() -> bool {
     LIBKRUN.is_some()
         || KERNEL.is_some()
@@ -170,12 +172,38 @@ async fn detect_kernel_format(
         Ok(file) => file,
         Err(_) => return Ok(fallback),
     };
-    let mut magic = [0u8; 4];
-    match file.read_exact(&mut magic).await {
-        Ok(_) if magic == *b"\x7fELF" => Ok(GuestKernelFormat::Elf),
-        Ok(_) => Ok(fallback),
-        Err(_) => Ok(fallback),
+    let mut probe = vec![0u8; KERNEL_FORMAT_PROBE_BYTES];
+    let read = match file.read(&mut probe).await {
+        Ok(read) => read,
+        Err(_) => return Ok(fallback),
+    };
+    probe.truncate(read);
+    Ok(detect_kernel_format_from_probe(&probe, fallback))
+}
+
+fn detect_kernel_format_from_probe(probe: &[u8], fallback: GuestKernelFormat) -> GuestKernelFormat {
+    if probe.starts_with(b"\x7fELF") {
+        return GuestKernelFormat::Elf;
     }
+    // Linux x86_64 vmlinuz images are EFI/PE-wrapped and usually embed the
+    // compressed ELF payload behind the DOS/PE stub. Treat them as Image*
+    // kernels so libkrun loads the embedded ELF instead of executing the PE
+    // header as a raw kernel blob.
+    if probe.starts_with(b"MZ") {
+        if probe.windows(3).any(|window| window == [0x1f, 0x8b, 0x08]) {
+            return GuestKernelFormat::ImageGz;
+        }
+        if probe.windows(3).any(|window| window == *b"BZh") {
+            return GuestKernelFormat::ImageBz2;
+        }
+        if probe
+            .windows(4)
+            .any(|window| window == [0x28, 0xb5, 0x2f, 0xfd])
+        {
+            return GuestKernelFormat::ImageZstd;
+        }
+    }
+    fallback
 }
 
 #[cfg(target_os = "macos")]
@@ -265,13 +293,14 @@ fn read_libkrunfw_kernel(libkrunfw: &Path) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::path::PathBuf;
     use std::time::Duration;
 
     use tempfile::tempdir;
 
-    use super::resolve_guest_paths;
-    use crate::GuestConfig;
+    use super::{detect_kernel_format_from_probe, resolve_guest_paths};
+    use crate::{GuestConfig, GuestKernelFormat};
 
     #[tokio::test]
     async fn keeps_explicit_paths_when_present() {
@@ -324,5 +353,48 @@ mod tests {
         } else {
             assert!(result.is_err());
         }
+    }
+
+    #[test]
+    fn detects_embedded_elf_payload_in_pe_wrapped_linux_kernel() {
+        let probe = b"MZ\x00\x00stub\x1f\x8b\x08rest";
+        assert_eq!(
+            detect_kernel_format_from_probe(probe, GuestKernelFormat::Raw),
+            GuestKernelFormat::ImageGz
+        );
+    }
+
+    #[test]
+    fn keeps_explicit_pe_gz_fallback_for_plain_gzip_kernel_files() {
+        let probe = b"\x1f\x8b\x08plain gzip stream";
+        assert_eq!(
+            detect_kernel_format_from_probe(probe, GuestKernelFormat::PeGz),
+            GuestKernelFormat::PeGz
+        );
+    }
+
+    #[tokio::test]
+    async fn detects_linux_x86_kernel_format_from_explicit_vmlinuz_path() {
+        let temp = tempdir().expect("tempdir");
+        let kernel = temp.path().join("vmlinuz-virt");
+        fs::write(&kernel, b"MZ\x00\x00stub\x1f\x8b\x08payload").expect("write kernel");
+        let guest = GuestConfig {
+            libkrun_library: PathBuf::from("/tmp/libkrun.so"),
+            kernel_image: kernel.clone(),
+            kernel_format: GuestKernelFormat::Raw,
+            rootfs_image: PathBuf::from("/tmp/rootfs.raw"),
+            firmware: None,
+            guest_agent_path: PathBuf::from("/usr/local/bin/sagens-guest-agent"),
+            guest_vsock_port: 11_000,
+            boot_timeout: Duration::from_secs(30),
+            guest_uid: 65_534,
+            guest_gid: 65_534,
+            guest_tmpfs_mib: 256,
+        };
+        let resolved = resolve_guest_paths(temp.path(), "test", &guest)
+            .await
+            .expect("resolve");
+        assert_eq!(resolved.kernel_image, kernel);
+        assert_eq!(resolved.kernel_format, GuestKernelFormat::ImageGz);
     }
 }
