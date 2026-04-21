@@ -18,7 +18,7 @@ use async_trait::async_trait;
 use tokio::process::Child;
 
 use crate::backend::{Backend, BackendLaunchOutput, BackendLaunchRequest};
-use crate::config::IsolationMode;
+use crate::config::{GuestKernelFormat, IsolationMode};
 use crate::guest_transport::GuestTransportEndpoint;
 use crate::host_hardening;
 use crate::{Result, SandboxError};
@@ -28,12 +28,15 @@ const RUNNER_EXE_ENV: &str = "SAGENS_LIBKRUN_RUNNER_EXE";
 const PYTHON_RUNNER_MODE: &str = "python-subprocess";
 const SELF_RUNNER_MODE: &str = "self-subprocess";
 pub(super) const RUNNER_STARTUP_FD_ENV: &str = "SAGENS_LIBKRUN_STARTUP_FD";
+const MIN_LINUX_X86_64_RAW_KERNEL_MEMORY_MB: u32 = 3329;
+const RECOMMENDED_LINUX_X86_64_RAW_KERNEL_MEMORY_MB: u32 = 3584;
 
 pub struct LibkrunBackend;
 
 #[async_trait]
 impl Backend for LibkrunBackend {
     async fn launch(&self, request: BackendLaunchRequest) -> Result<BackendLaunchOutput> {
+        validate_launch_request(&request)?;
         let runner_mode = effective_runner_mode(request.isolation_mode);
         if matches!(runner_mode, RunnerMode::Thread) && request.hardening.cgroup_parent.is_some() {
             return Err(SandboxError::invalid(
@@ -130,6 +133,33 @@ fn effective_runner_mode(isolation_mode: IsolationMode) -> RunnerMode {
         return RunnerMode::SelfSubprocess;
     }
     runner_mode()
+}
+
+fn validate_launch_request(request: &BackendLaunchRequest) -> Result<()> {
+    let Some(min_memory_mb) = min_memory_mb_for_host_kernel(
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        request.guest.kernel_format,
+    ) else {
+        return Ok(());
+    };
+    if request.policy.memory_mb >= min_memory_mb {
+        return Ok(());
+    }
+    Err(SandboxError::invalid(format!(
+        "linux-x86_64 libkrun requires at least {min_memory_mb} MiB RAM when booting the raw bundled kernel; set memory_mb to at least {RECOMMENDED_LINUX_X86_64_RAW_KERNEL_MEMORY_MB} MiB"
+    )))
+}
+
+fn min_memory_mb_for_host_kernel(
+    host_os: &str,
+    host_arch: &str,
+    kernel_format: GuestKernelFormat,
+) -> Option<u32> {
+    if host_os == "linux" && host_arch == "x86_64" && kernel_format == GuestKernelFormat::Raw {
+        return Some(MIN_LINUX_X86_64_RAW_KERNEL_MEMORY_MB);
+    }
+    None
 }
 
 fn should_use_self_runner_on_macos() -> bool {
@@ -325,7 +355,8 @@ fn resolve_runner_executable(context: &str) -> Result<std::path::PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::is_sagens_self_runner_binary;
+    use super::{is_sagens_self_runner_binary, min_memory_mb_for_host_kernel};
+    use crate::config::GuestKernelFormat;
 
     #[test]
     fn recognizes_packaged_and_local_sagens_binaries() {
@@ -338,5 +369,29 @@ mod tests {
     fn rejects_non_sagens_binary_names() {
         assert!(!is_sagens_self_runner_binary("cargo-test"));
         assert!(!is_sagens_self_runner_binary("agent-box"));
+    }
+
+    #[test]
+    fn requires_extra_ram_for_linux_x86_64_raw_kernels() {
+        assert_eq!(
+            min_memory_mb_for_host_kernel("linux", "x86_64", GuestKernelFormat::Raw),
+            Some(3329)
+        );
+    }
+
+    #[test]
+    fn skips_extra_ram_guard_for_other_hosts_or_kernel_formats() {
+        assert_eq!(
+            min_memory_mb_for_host_kernel("linux", "x86_64", GuestKernelFormat::Elf),
+            None
+        );
+        assert_eq!(
+            min_memory_mb_for_host_kernel("macos", "x86_64", GuestKernelFormat::Raw),
+            None
+        );
+        assert_eq!(
+            min_memory_mb_for_host_kernel("linux", "aarch64", GuestKernelFormat::Raw),
+            None
+        );
     }
 }
