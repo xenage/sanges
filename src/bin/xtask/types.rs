@@ -126,6 +126,7 @@ impl Platform {
 
 #[derive(Debug)]
 pub(super) struct RuntimeBundle {
+    pub(super) bundle_dir: PathBuf,
     pub(super) libkrun: PathBuf,
     pub(super) firmware: Option<PathBuf>,
     pub(super) runtime_support: Vec<PathBuf>,
@@ -149,7 +150,7 @@ impl RuntimeBundleSource {
 
 #[derive(Debug, Serialize)]
 struct EmbedManifest {
-    libkrun: PathBuf,
+    libkrun: Option<PathBuf>,
     kernel: PathBuf,
     rootfs: PathBuf,
     firmware: Option<PathBuf>,
@@ -157,7 +158,7 @@ struct EmbedManifest {
 }
 
 pub(super) struct ResolvedArtifacts {
-    pub(super) libkrun: PathBuf,
+    pub(super) libkrun: Option<PathBuf>,
     pub(super) kernel: PathBuf,
     pub(super) rootfs: PathBuf,
     pub(super) firmware: Option<PathBuf>,

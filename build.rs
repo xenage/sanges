@@ -10,7 +10,7 @@ const EMBED_MANIFEST: &str = ".sagens-state/embed-manifest.json";
 
 #[derive(Debug, Deserialize)]
 struct EmbedManifest {
-    libkrun: PathBuf,
+    libkrun: Option<PathBuf>,
     kernel: PathBuf,
     rootfs: PathBuf,
     firmware: Option<PathBuf>,
@@ -71,9 +71,9 @@ fn render_assets(manifest_path: &Path, workspace_root: &Path) -> String {
         return body;
     };
 
-    body.push_str(&render_required_asset(
+    body.push_str(&render_optional_asset(
         "LIBKRUN",
-        &manifest.libkrun,
+        manifest.libkrun.as_deref(),
         &out_dir,
     ));
     body.push_str(&render_required_asset("KERNEL", &manifest.kernel, &out_dir));
@@ -118,11 +118,18 @@ fn discover_default_manifest(repo_root: &Path) -> Option<EmbedManifest> {
     let lib_dir = runtime_dir.join("lib");
     let libkrun = lib_dir.join(platform.2);
     let guest_dir = repo_root.join("artifacts").join(platform.1);
-    let kernel = guest_dir.join(match target_os.as_str() {
-        "macos" => "vmlinuz-virt.pe.gz",
-        "linux" => "vmlinuz-virt",
+    let linux_x86_64_embedded_kernel = runtime_dir
+        .join("share")
+        .join("krunkit")
+        .join("libkrunfw-kernel.elf");
+    let kernel = match (target_os.as_str(), target_arch.as_str()) {
+        ("linux", "x86_64") if linux_x86_64_embedded_kernel.is_file() => {
+            linux_x86_64_embedded_kernel
+        }
+        ("macos", _) => guest_dir.join("vmlinuz-virt.pe.gz"),
+        ("linux", _) => guest_dir.join("vmlinuz-virt"),
         _ => return None,
-    });
+    };
     let rootfs = guest_dir.join("rootfs.raw");
     let firmware = match target_os.as_str() {
         "macos" => Some(
@@ -143,7 +150,8 @@ fn discover_default_manifest(repo_root: &Path) -> Option<EmbedManifest> {
     }
     println!("cargo:rerun-if-changed={}", lib_dir.display());
 
-    if !libkrun.is_file() || !kernel.is_file() || !rootfs.is_file() {
+    let embedded_libkrun = target_os.as_str() != "linux";
+    if (embedded_libkrun && !libkrun.is_file()) || !kernel.is_file() || !rootfs.is_file() {
         return None;
     }
     if let Some(path) = &firmware
@@ -153,7 +161,7 @@ fn discover_default_manifest(repo_root: &Path) -> Option<EmbedManifest> {
     }
 
     Some(EmbedManifest {
-        libkrun: libkrun.clone(),
+        libkrun: embedded_libkrun.then_some(libkrun.clone()),
         kernel,
         rootfs,
         firmware,

@@ -6,6 +6,7 @@ use std::slice;
 #[cfg(target_os = "macos")]
 use libloading::{Library, Symbol};
 use tokio::fs;
+use tokio::io::AsyncReadExt;
 use tokio::task;
 
 use crate::{GuestConfig, GuestKernelFormat, Result, SandboxError};
@@ -41,7 +42,8 @@ pub async fn resolve_guest_paths(
 ) -> Result<GuestConfig> {
     let bundle_dir = state_dir.join("embedded-bundle").join(bundle_id);
     extract_runtime_support_assets(&bundle_dir, RUNTIME_SUPPORT).await?;
-    let libkrun_library = resolve_path(&bundle_dir, &guest.libkrun_library, LIBKRUN).await?;
+    let libkrun_library =
+        resolve_libkrun_path(&bundle_dir, &guest.libkrun_library, LIBKRUN).await?;
     let kernel_image = resolve_optional_path(&bundle_dir, &guest.kernel_image, KERNEL).await?;
     let rootfs_image = resolve_path(&bundle_dir, &guest.rootfs_image, ROOTFS).await?;
     let firmware = match &guest.firmware {
@@ -58,6 +60,7 @@ pub async fn resolve_guest_paths(
         guest.kernel_format,
     )
     .await?;
+    let kernel_format = detect_kernel_format(&kernel_image, kernel_format).await?;
     Ok(GuestConfig {
         libkrun_library,
         kernel_image,
@@ -88,6 +91,24 @@ async fn resolve_path(
             bundle_dir.display()
         ))),
     }
+}
+
+#[cfg(target_os = "linux")]
+async fn resolve_libkrun_path(
+    bundle_dir: &Path,
+    configured: &Path,
+    embedded: Option<EmbeddedAsset>,
+) -> Result<PathBuf> {
+    resolve_optional_path(bundle_dir, configured, embedded).await
+}
+
+#[cfg(not(target_os = "linux"))]
+async fn resolve_libkrun_path(
+    bundle_dir: &Path,
+    configured: &Path,
+    embedded: Option<EmbeddedAsset>,
+) -> Result<PathBuf> {
+    resolve_path(bundle_dir, configured, embedded).await
 }
 
 async fn resolve_optional_path(
@@ -155,6 +176,25 @@ async fn extract_runtime_support_assets(bundle_dir: &Path, assets: &[EmbeddedAss
         extract_asset(bundle_dir, asset.file_name, *asset).await?;
     }
     Ok(())
+}
+
+async fn detect_kernel_format(
+    path: &Path,
+    fallback: GuestKernelFormat,
+) -> Result<GuestKernelFormat> {
+    if path.as_os_str().is_empty() {
+        return Ok(fallback);
+    }
+    let mut file = match fs::File::open(path).await {
+        Ok(file) => file,
+        Err(_) => return Ok(fallback),
+    };
+    let mut magic = [0u8; 4];
+    match file.read_exact(&mut magic).await {
+        Ok(_) if magic == *b"\x7fELF" => Ok(GuestKernelFormat::Elf),
+        Ok(_) => Ok(fallback),
+        Err(_) => Ok(fallback),
+    }
 }
 
 #[cfg(target_os = "macos")]

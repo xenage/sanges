@@ -10,8 +10,10 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::slice;
 
 use anyhow::{Context, ensure};
+use libloading::{Library, Symbol};
 
 use super::cargo_ops::{cargo_build, run};
 use super::types::{
@@ -29,6 +31,7 @@ use submodules::ensure_upstream_checkout;
 const GUEST_OUTPUT_DIR_ENV: &str = "SAGENS_GUEST_OUTPUT_DIR";
 const GUEST_WORK_DIR_ENV: &str = "SAGENS_GUEST_WORK_DIR";
 const RUNTIME_BUNDLE_DIR_ENV: &str = "SAGENS_RUNTIME_BUNDLE_DIR";
+const LINUX_X86_64_KERNEL_NAME: &str = "libkrunfw-kernel.elf";
 
 pub(super) fn maybe_init_submodules(root: &Path) -> anyhow::Result<()> {
     submodules::maybe_init_submodules(root)
@@ -59,7 +62,9 @@ pub(super) fn ensure_runtime_bundle(
                 .with_context(|| format!("removing {}", runtime_dir.display()))?;
         }
         fs::create_dir_all(&lib_dir).with_context(|| format!("creating {}", lib_dir.display()))?;
-        if platform.os == PlatformOs::Macos {
+        if platform.os == PlatformOs::Macos
+            || (platform.os == PlatformOs::Linux && platform.arch == PlatformArch::X86_64)
+        {
             fs::create_dir_all(&share_dir)
                 .with_context(|| format!("creating {}", share_dir.display()))?;
         }
@@ -78,9 +83,10 @@ pub(super) fn ensure_runtime_bundle(
         }
         PlatformOs::Linux => None,
     };
-    ensure_platform_runtime_support(platform, &lib_dir)?;
+    ensure_platform_runtime_support(root, platform, &runtime_dir, &lib_dir)?;
     let runtime_support = collect_runtime_support(&lib_dir, &libkrun)?;
     Ok(RuntimeBundle {
+        bundle_dir: runtime_dir,
         libkrun,
         firmware,
         runtime_support,
@@ -119,7 +125,7 @@ pub(super) fn resolve_artifacts(
     platform: Platform,
     runtime: RuntimeBundle,
 ) -> anyhow::Result<ResolvedArtifacts> {
-    let kernel = guest_kernel_path(root, platform);
+    let kernel = packaged_kernel_path(root, platform, &runtime.bundle_dir);
     let rootfs = guest_rootfs_path(root, platform);
     ensure!(
         kernel.is_file(),
@@ -144,12 +150,22 @@ pub(super) fn resolve_artifacts(
         );
     }
     Ok(ResolvedArtifacts {
-        libkrun: runtime.libkrun,
+        libkrun: (platform.os != PlatformOs::Linux).then_some(runtime.libkrun),
         kernel,
         rootfs,
         firmware: runtime.firmware,
         runtime_support: runtime.runtime_support,
     })
+}
+
+fn packaged_kernel_path(root: &Path, platform: Platform, runtime_dir: &Path) -> PathBuf {
+    if platform.os == PlatformOs::Linux && platform.arch == PlatformArch::X86_64 {
+        let extracted = linux_x86_64_embedded_kernel_path(runtime_dir);
+        if extracted.is_file() {
+            return extracted;
+        }
+    }
+    guest_kernel_path(root, platform)
 }
 
 pub(super) fn guest_kernel_path(root: &Path, platform: Platform) -> PathBuf {
@@ -165,9 +181,17 @@ pub(super) fn guest_rootfs_path(root: &Path, platform: Platform) -> PathBuf {
     guest_output_dir(root, platform).join("rootfs.raw")
 }
 
-fn ensure_platform_runtime_support(platform: Platform, lib_dir: &Path) -> anyhow::Result<()> {
+fn ensure_platform_runtime_support(
+    root: &Path,
+    platform: Platform,
+    runtime_dir: &Path,
+    lib_dir: &Path,
+) -> anyhow::Result<()> {
     if platform.os == PlatformOs::Macos && platform.arch == PlatformArch::Aarch64 {
         copy_optional_macos_libkrunfw(lib_dir)?;
+    }
+    if platform.os == PlatformOs::Linux && platform.arch == PlatformArch::X86_64 {
+        ensure_linux_x86_64_embedded_kernel(root, runtime_dir)?;
     }
     Ok(())
 }
@@ -332,6 +356,41 @@ fn build_libkrun_from_source(
     Ok(())
 }
 
+fn ensure_linux_x86_64_embedded_kernel(root: &Path, runtime_dir: &Path) -> anyhow::Result<()> {
+    let target = linux_x86_64_embedded_kernel_path(runtime_dir);
+    if target.is_file() {
+        return Ok(());
+    }
+    let libkrunfw_root =
+        ensure_upstream_checkout(root, "third_party/upstream/libkrunfw", "Makefile")?;
+    let mut make = crate::cmd::tool_command("make");
+    make.arg("-C").arg(&libkrunfw_root);
+    make.env_remove("CARGO_TARGET_DIR");
+    run(
+        make,
+        "building libkrunfw from third_party/upstream/libkrunfw",
+    )?;
+    let built = find_built_linux_libkrunfw(&libkrunfw_root)?;
+    let bytes = read_libkrunfw_kernel(&built)?;
+    ensure!(
+        bytes.starts_with(b"\x7fELF"),
+        "expected libkrunfw embedded kernel to be ELF: {}",
+        built.display()
+    );
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+    }
+    fs::write(&target, bytes).with_context(|| format!("writing {}", target.display()))?;
+    Ok(())
+}
+
+fn linux_x86_64_embedded_kernel_path(runtime_dir: &Path) -> PathBuf {
+    runtime_dir
+        .join("share")
+        .join("krunkit")
+        .join(LINUX_X86_64_KERNEL_NAME)
+}
+
 fn upstream_libkrun_arch(platform: Platform) -> Option<&'static str> {
     if platform.os != PlatformOs::Macos {
         return None;
@@ -364,6 +423,45 @@ fn find_built_lib(target_dir: &Path, platform: Platform) -> anyhow::Result<PathB
         .into_iter()
         .last()
         .context("unable to locate built libkrun artifact")
+}
+
+fn find_built_linux_libkrunfw(root: &Path) -> anyhow::Result<PathBuf> {
+    let mut candidates = Vec::new();
+    for entry in fs::read_dir(root).with_context(|| format!("reading {}", root.display()))? {
+        let path = entry?.path();
+        let name = path.file_name().and_then(OsStr::to_str).unwrap_or_default();
+        if path.is_file() && name.starts_with("libkrunfw.so.") {
+            candidates.push(path);
+        }
+    }
+    candidates.sort();
+    candidates
+        .into_iter()
+        .last()
+        .context("unable to locate built libkrunfw artifact")
+}
+
+fn read_libkrunfw_kernel(libkrunfw: &Path) -> anyhow::Result<Vec<u8>> {
+    type KrunfwGetKernel =
+        unsafe extern "C" fn(*mut u64, *mut u64, *mut usize) -> *mut std::ffi::c_char;
+
+    let library = unsafe { Library::new(libkrunfw) }
+        .with_context(|| format!("loading {}", libkrunfw.display()))?;
+    let symbol: Symbol<'_, KrunfwGetKernel> =
+        unsafe { library.get(b"krunfw_get_kernel\0") }.context("loading krunfw_get_kernel")?;
+    let mut guest_addr = 0u64;
+    let mut entry_addr = 0u64;
+    let mut size = 0usize;
+    let pointer = unsafe { symbol(&mut guest_addr, &mut entry_addr, &mut size) };
+    ensure!(
+        !pointer.is_null() && size > 0,
+        "libkrunfw returned an empty kernel bundle"
+    );
+    ensure!(
+        guest_addr != 0 && entry_addr != 0,
+        "libkrunfw returned invalid kernel addresses"
+    );
+    Ok(unsafe { slice::from_raw_parts(pointer.cast::<u8>(), size) }.to_vec())
 }
 
 fn collect_runtime_support(lib_dir: &Path, libkrun: &Path) -> anyhow::Result<Vec<PathBuf>> {
