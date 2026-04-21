@@ -11,8 +11,6 @@ use std::fs::File;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
-#[cfg(target_os = "macos")]
-use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::mpsc::{RecvTimeoutError, sync_channel};
@@ -232,23 +230,26 @@ async fn spawn_runner_process(
     request: &BackendLaunchRequest,
     runner_kind: &str,
 ) -> Result<Child> {
-    let startup_gate = if request.isolation_mode == IsolationMode::Secure {
-        Some(create_startup_gate()?)
-    } else {
-        None
-    };
+    let startup_gate = (request.isolation_mode == IsolationMode::Secure)
+        .then(create_startup_gate)
+        .transpose()?;
     if let Some(gate) = &startup_gate {
         command.env(RUNNER_STARTUP_FD_ENV, gate.read_end.as_raw_fd().to_string());
     }
-
     let log_file = open_private_log(&request.run_layout.runner_log)?;
     let stderr = log_file
         .try_clone()
         .map_err(|error| SandboxError::io("cloning libkrun runner log", error))?;
     #[cfg(target_os = "macos")]
     if let Some(bundle_dir) = request.guest.libkrun_library.parent() {
-        prepend_command_env_path(&mut command, "DYLD_LIBRARY_PATH", bundle_dir);
-        prepend_command_env_path(&mut command, "DYLD_FALLBACK_LIBRARY_PATH", bundle_dir);
+        for name in ["DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH"] {
+            let mut value = bundle_dir.as_os_str().to_os_string();
+            if let Some(existing) = std::env::var_os(name).filter(|value| !value.is_empty()) {
+                value.push(OsStr::new(":"));
+                value.push(existing);
+            }
+            command.env(name, value);
+        }
     }
     command
         .stdin(Stdio::null())
@@ -257,7 +258,6 @@ async fn spawn_runner_process(
     let mut child = command.spawn().map_err(|error| {
         SandboxError::io(format!("spawning {runner_kind} libkrun runner"), error)
     })?;
-
     let Some(pid) = child.id() else {
         let _ = child.start_kill();
         return Err(SandboxError::backend(
@@ -286,17 +286,6 @@ async fn spawn_runner_process(
     }
     Ok(child)
 }
-
-#[cfg(target_os = "macos")]
-fn prepend_command_env_path(command: &mut tokio::process::Command, name: &str, prefix: &Path) {
-    let mut value = prefix.as_os_str().to_os_string();
-    if let Some(existing) = std::env::var_os(name).filter(|value| !value.is_empty()) {
-        value.push(OsStr::new(":"));
-        value.push(existing);
-    }
-    command.env(name, value);
-}
-
 struct StartupGate {
     read_end: OwnedFd,
     write_end: OwnedFd,
