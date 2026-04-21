@@ -358,11 +358,17 @@ mod tests {
 
     #[test]
     fn optional_fd_treats_einval_as_absent_shutdown_fd() {
-        assert_eq!(call_optional_fd(-libc::EINVAL, "krun_get_shutdown_eventfd").unwrap(), None);
+        assert_eq!(
+            call_optional_fd(-libc::EINVAL, "krun_get_shutdown_eventfd").unwrap(),
+            None
+        );
     }
 
     #[test]
     fn optional_fd_returns_descriptor_when_present() {
-        assert_eq!(call_optional_fd(17, "krun_get_shutdown_eventfd").unwrap(), Some(17));
+        assert_eq!(
+            call_optional_fd(17, "krun_get_shutdown_eventfd").unwrap(),
+            Some(17)
+        );
     }
 }

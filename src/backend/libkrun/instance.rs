@@ -72,7 +72,9 @@ async fn shutdown_thread_vm(
     thread: JoinHandle<Result<()>>,
     shutdown_fd: Option<OwnedFd>,
 ) -> Result<()> {
-    if !thread.is_finished() && let Some(shutdown_fd) = shutdown_fd.as_ref() {
+    if !thread.is_finished()
+        && let Some(shutdown_fd) = shutdown_fd.as_ref()
+    {
         signal_shutdown(shutdown_fd)?;
     }
     let joined = tokio::task::spawn_blocking(move || thread.join());
