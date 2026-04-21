@@ -18,7 +18,6 @@ use super::verify::{extract_member_from_tar_gz, verify_detached_signature, verif
 
 pub(super) struct Builder {
     client: Client,
-    signing_key: String,
     signing_cert: openpgp::Cert,
 }
 
@@ -56,7 +55,6 @@ impl Builder {
         );
         Ok(Self {
             client,
-            signing_key,
             signing_cert,
         })
     }
@@ -106,12 +104,7 @@ impl Builder {
         self.fetch_to_file(&format!("{url}.sha256"), &checksum_path)?;
         self.fetch_to_file(&format!("{url}.asc"), &signature_path)?;
         verify_sha256(destination, &checksum_path)?;
-        verify_detached_signature(
-            destination,
-            &signature_path,
-            &self.signing_cert,
-            &self.signing_key,
-        )
+        verify_detached_signature(destination, &signature_path, &self.signing_cert)
     }
 
     fn fetch_indexes(&self, index_dir: &Path, arch: &str) -> anyhow::Result<()> {

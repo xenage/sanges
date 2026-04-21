@@ -58,20 +58,18 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ${{ env.BUILD_CACHE_ROOT }}
-          key: release-build-${{ matrix.platform }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'build.rs', 'build-local.sh', 'shared/**', 'guest-agent/**', 'src/**', '.github/workflows/release.yml') }}
-          restore-keys: |
-            release-build-${{ matrix.platform }}-
+          key: release-build-${{ matrix.platform }}
 
       - name: Install Linux build deps
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y e2fsprogs gnupg tar clang lld llvm-dev libclang-dev pkg-config patchelf libc6-dev libelf-dev libssl-dev libncurses-dev bison flex dwarves cpio xz-utils
+          sudo apt-get install -y clang lld llvm-dev libclang-dev pkg-config patchelf libc6-dev libelf-dev libssl-dev libncurses-dev bison flex dwarves cpio xz-utils
 
       - name: Install macOS build deps
         if: runner.os == 'macOS'
         run: |
-          brew install llvm lld xz e2fsprogs gnupg zig
+          brew install llvm lld xz zig
 
       - name: Install macOS Intel HVF deps
         if: matrix.platform == 'macos-x86_64'
@@ -112,16 +110,6 @@ jobs:
       ARTIFACT_VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('ci-{0}', github.sha) }}
     steps:
       - uses: actions/checkout@v6
-
-      - name: Install Linux runtime deps
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y e2fsprogs
-
-      - name: Install macOS runtime deps
-        if: runner.os == 'macOS'
-        run: brew install e2fsprogs
 
       - name: Download built artifact
         uses: actions/download-artifact@v8

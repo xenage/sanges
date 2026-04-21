@@ -1,7 +1,8 @@
 use std::net::TcpListener;
 use std::path::Path;
-use std::process::Command;
 use std::time::{Duration, Instant};
+
+use sysinfo::{Pid, System};
 
 use crate::auth::{UserConfig, write_user_config};
 use crate::sagens::config::SagensPaths;
@@ -112,14 +113,17 @@ fn process_command_matches_binary(pid: u32, host_binary: &Path) -> Result<bool> 
 fn process_command(pid: u32) -> Result<String> {
     #[cfg(unix)]
     {
-        let output = Command::new("ps")
-            .args(["-p", &pid.to_string(), "-o", "command="])
-            .output()
-            .map_err(|error| SandboxError::io("running ps for daemon recovery", error))?;
-        if !output.status.success() {
+        let system = System::new_all();
+        let Some(process) = system.process(Pid::from_u32(pid)) else {
             return Ok(String::new());
-        }
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        };
+        let command = process
+            .cmd()
+            .iter()
+            .map(|value| value.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(" ");
+        Ok(command.trim().to_owned())
     }
     #[cfg(not(unix))]
     {

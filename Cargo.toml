@@ -28,6 +28,7 @@ publish = false
 anyhow = "1.0.102"
 async-trait = "0.1.89"
 base64 = "0.22.1"
+ext4-lwext4 = "0.1.2"
 flate2 = "1.1.9"
 futures-util = "0.3.32"
 libc = "0.2.185"
@@ -38,6 +39,7 @@ sequoia-openpgp = { version = "2.2.0", default-features = false, features = ["co
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 sha2 = "0.11.0"
+sysinfo = "0.38.4"
 tar = "0.4.45"
 tempfile = "3.27.0"
 thiserror = "2.0.18"

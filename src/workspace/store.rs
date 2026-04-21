@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use ext4_lwext4::{FileBlockDevice, MkfsOptions, mkfs};
 use tokio::fs;
 use uuid::Uuid;
 
@@ -227,17 +228,15 @@ impl WorkspaceStore {
     }
 
     fn format_ext4(&self, disk_path: &Path) -> Result<()> {
-        for (program, args) in ext4_commands(disk_path) {
-            match Command::new(&program).args(&args).status() {
-                Ok(status) if status.success() => return Ok(()),
-                Ok(_) => continue,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(error) => return Err(SandboxError::io(format!("spawning {program}"), error)),
-            }
-        }
-        Err(SandboxError::UnsupportedHost(
-            "ext4 image tooling not found; install mkfs.ext4 or mke2fs".into(),
-        ))
+        let device = FileBlockDevice::open(disk_path).map_err(|error| {
+            SandboxError::backend(format!("opening ext4 workspace image: {error}"))
+        })?;
+        let options = MkfsOptions::ext4()
+            .with_block_size(4096)
+            .with_label("workspace");
+        mkfs(device, &options).map_err(|error| {
+            SandboxError::backend(format!("formatting ext4 workspace image: {error}"))
+        })
     }
 
     fn resize_ext4(&self, disk_path: &Path, size_mib: u64) -> Result<()> {
@@ -296,25 +295,6 @@ async fn set_private_permissions(path: &Path) -> Result<()> {
             .map_err(|error| SandboxError::io("setting runtime directory permissions", error))?;
     }
     Ok(())
-}
-
-pub(super) fn ext4_commands(disk_path: &Path) -> Vec<(String, Vec<String>)> {
-    let disk = disk_path.display().to_string();
-    vec![
-        ("mkfs.ext4".into(), vec!["-F".into(), disk.clone()]),
-        (
-            "mke2fs".into(),
-            vec!["-t".into(), "ext4".into(), "-F".into(), disk.clone()],
-        ),
-        (
-            "/opt/homebrew/opt/e2fsprogs/sbin/mkfs.ext4".into(),
-            vec!["-F".into(), disk.clone()],
-        ),
-        (
-            "/opt/homebrew/opt/e2fsprogs/sbin/mke2fs".into(),
-            vec!["-t".into(), "ext4".into(), "-F".into(), disk],
-        ),
-    ]
 }
 
 fn resize_ext4_commands(disk_path: &Path, size_mib: u64) -> Vec<(String, Vec<String>)> {

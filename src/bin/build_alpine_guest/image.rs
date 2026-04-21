@@ -1,10 +1,13 @@
-use std::env;
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{self, Seek, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
-use anyhow::{Context, bail, ensure};
+use anyhow::{Context, bail};
+use ext4_lwext4::{Ext4Fs, FileBlockDevice, MkfsOptions, OpenFlags, mkfs};
+use flate2::read::GzDecoder;
+use tar::Archive;
+use tempfile::{TempDir, tempdir_in};
 
 pub(super) fn build_partitioned_ext4_image(
     rootfs_dir: &Path,
@@ -21,55 +24,29 @@ pub(super) fn build_partitioned_ext4_image(
     drop(image);
     write_mbr_partition_table(image_path, size_mib)?;
 
-    let mke2fs = find_mke2fs()?;
     let offset_bytes = 1024 * 1024_u64;
-    let filesystem_mib = 64_u64.max(size_mib.saturating_sub(offset_bytes.div_ceil(1024 * 1024)));
-    let status = Command::new(&mke2fs)
-        .arg("-d")
-        .arg(rootfs_dir)
-        .arg("-t")
-        .arg("ext4")
-        .arg("-L")
-        .arg("agent-rootfs")
-        .arg("-F")
-        .arg("-E")
-        .arg(format!("offset={offset_bytes}"))
-        .arg(image_path)
-        .arg(format!("{filesystem_mib}M"))
-        .status()
-        .with_context(|| format!("running {}", mke2fs.display()))?;
-    ensure!(
-        status.success(),
-        "{} exited with {status}",
-        mke2fs.display()
-    );
+    let filesystem_bytes =
+        64_u64.max(size_mib.saturating_sub(offset_bytes.div_ceil(1024 * 1024))) * 1024 * 1024;
+    let staging_dir = create_staging_dir(image_path)?;
+    let staging_path = staging_dir.path().join("rootfs.ext4");
+    build_staged_ext4_image(rootfs_dir, &staging_path, filesystem_bytes)?;
+    copy_staged_partition(&staging_path, image_path, offset_bytes)?;
     Ok(())
 }
 
 pub(super) fn unpack_with_tar(archive_path: &Path, destination: &Path) -> anyhow::Result<()> {
     fs::create_dir_all(destination)?;
-    let tar = find_in_path("tar").context("tar is required to unpack Alpine archives")?;
-    let status = Command::new(&tar)
-        .arg("-x")
-        .arg("-z")
-        .arg("-f")
-        .arg(archive_path)
-        .arg("-C")
-        .arg(destination)
-        .status()
-        .with_context(|| {
-            format!(
-                "running {} to unpack {}",
-                tar.display(),
-                archive_path.display()
-            )
-        })?;
-    ensure!(
-        status.success(),
-        "failed to unpack {} with {}",
-        archive_path.display(),
-        tar.display()
-    );
+    let archive =
+        File::open(archive_path).with_context(|| format!("opening {}", archive_path.display()))?;
+    let decoder = GzDecoder::new(archive);
+    let mut archive = Archive::new(decoder);
+    archive.unpack(destination).with_context(|| {
+        format!(
+            "unpacking {} to {}",
+            archive_path.display(),
+            destination.display()
+        )
+    })?;
     Ok(())
 }
 
@@ -127,25 +104,118 @@ fn walkdir(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
     Ok(entries)
 }
 
-fn find_mke2fs() -> anyhow::Result<PathBuf> {
-    let candidates = [
-        find_in_path("mke2fs"),
-        find_in_path("mkfs.ext4"),
-        Some(PathBuf::from("/opt/homebrew/opt/e2fsprogs/sbin/mke2fs")),
-        Some(PathBuf::from("/opt/homebrew/opt/e2fsprogs/sbin/mkfs.ext4")),
-    ];
-    for candidate in candidates.into_iter().flatten() {
-        if candidate.exists() {
-            return Ok(candidate);
-        }
-    }
-    bail!("mke2fs or mkfs.ext4 is required to build the Alpine guest image")
+fn create_staging_dir(image_path: &Path) -> anyhow::Result<TempDir> {
+    let parent = image_path.parent().unwrap_or_else(|| Path::new("."));
+    tempdir_in(parent)
+        .with_context(|| format!("creating staging directory under {}", parent.display()))
 }
 
-fn find_in_path(binary: &str) -> Option<PathBuf> {
-    env::var_os("PATH").and_then(|paths| {
-        env::split_paths(&paths)
-            .map(|dir| dir.join(binary))
-            .find(|candidate| candidate.exists())
-    })
+fn build_staged_ext4_image(
+    rootfs_dir: &Path,
+    staging_path: &Path,
+    size_bytes: u64,
+) -> anyhow::Result<()> {
+    let device = FileBlockDevice::create(staging_path, size_bytes)
+        .with_context(|| format!("creating staged ext4 image {}", staging_path.display()))?;
+    let options = MkfsOptions::ext4()
+        .with_block_size(4096)
+        .with_label("agent-rootfs");
+    mkfs(device, &options).context("formatting staged ext4 image")?;
+
+    let device = FileBlockDevice::open(staging_path)
+        .with_context(|| format!("opening staged ext4 image {}", staging_path.display()))?;
+    let fs = Ext4Fs::mount(device, false).context("mounting staged ext4 image")?;
+    populate_ext4_from_dir(rootfs_dir, &fs)?;
+    fs.umount().context("unmounting staged ext4 image")
+}
+
+fn populate_ext4_from_dir(rootfs_dir: &Path, ext4: &Ext4Fs) -> anyhow::Result<()> {
+    let root_mode = fs::metadata(rootfs_dir)
+        .with_context(|| format!("reading {}", rootfs_dir.display()))?
+        .permissions()
+        .mode()
+        & 0o7777;
+    ext4.set_permissions("/", root_mode)
+        .context("setting ext4 root permissions")?;
+    copy_directory_entries(rootfs_dir, Path::new(""), ext4)
+}
+
+fn copy_directory_entries(
+    source_dir: &Path,
+    relative_dir: &Path,
+    ext4: &Ext4Fs,
+) -> anyhow::Result<()> {
+    let mut children = fs::read_dir(source_dir)
+        .with_context(|| format!("reading {}", source_dir.display()))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .with_context(|| format!("iterating {}", source_dir.display()))?;
+    children.sort_by_key(|entry| entry.file_name());
+    for child in children {
+        let host_path = child.path();
+        let relative_path = relative_dir.join(child.file_name());
+        let metadata = fs::symlink_metadata(&host_path)
+            .with_context(|| format!("reading {}", host_path.display()))?;
+        let image_path = ext4_path(&relative_path)?;
+        let mode = metadata.permissions().mode() & 0o7777;
+        if metadata.file_type().is_dir() {
+            ext4.mkdir(&image_path, mode)
+                .with_context(|| format!("creating directory {image_path} in staged ext4 image"))?;
+            ext4.set_permissions(&image_path, mode)
+                .with_context(|| format!("setting directory permissions on {image_path}"))?;
+            copy_directory_entries(&host_path, &relative_path, ext4)?;
+            continue;
+        }
+        if metadata.file_type().is_symlink() {
+            let target = fs::read_link(&host_path)
+                .with_context(|| format!("reading symlink {}", host_path.display()))?;
+            let target = target
+                .to_str()
+                .context("symlink target is not valid UTF-8")?;
+            ext4.symlink(target, &image_path)
+                .with_context(|| format!("creating symlink {image_path} -> {target}"))?;
+            continue;
+        }
+        if metadata.is_file() {
+            let mut input = File::open(&host_path)
+                .with_context(|| format!("opening {}", host_path.display()))?;
+            let mut output = ext4
+                .open(&image_path, OpenFlags::CREATE | OpenFlags::WRITE)
+                .with_context(|| format!("creating file {image_path} in staged ext4 image"))?;
+            io::copy(&mut input, &mut output).with_context(|| {
+                format!("copying {} into staged ext4 image", host_path.display())
+            })?;
+            ext4.set_permissions(&image_path, mode)
+                .with_context(|| format!("setting file permissions on {image_path}"))?;
+            continue;
+        }
+        bail!("unsupported rootfs entry type: {}", host_path.display());
+    }
+    Ok(())
+}
+
+fn ext4_path(relative_path: &Path) -> anyhow::Result<String> {
+    let path = relative_path
+        .to_str()
+        .context("rootfs path is not valid UTF-8")?
+        .replace('\\', "/");
+    Ok(format!("/{}", path))
+}
+
+fn copy_staged_partition(
+    staging_path: &Path,
+    image_path: &Path,
+    offset_bytes: u64,
+) -> anyhow::Result<()> {
+    let mut staging =
+        File::open(staging_path).with_context(|| format!("opening {}", staging_path.display()))?;
+    let mut image = File::options()
+        .write(true)
+        .open(image_path)
+        .with_context(|| format!("opening {} for partition copy", image_path.display()))?;
+    image
+        .seek(std::io::SeekFrom::Start(offset_bytes))
+        .with_context(|| format!("seeking {}", image_path.display()))?;
+    io::copy(&mut staging, &mut image)
+        .with_context(|| format!("copying staged ext4 image into {}", image_path.display()))?;
+    Ok(())
 }

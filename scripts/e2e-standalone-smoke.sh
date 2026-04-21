@@ -15,6 +15,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENTITLEMENTS="$REPO_ROOT/macos/sagens.entitlements"
+source "$SCRIPT_DIR/e2e-logging.sh"
 
 ROOT_TMP="$(mktemp -d "${TMPDIR:-/tmp}/sagens-standalone-smoke.XXXXXX")"
 STATE_DIR="$ROOT_TMP/state"
@@ -37,6 +38,9 @@ fi
 
 cleanup() {
   local status="${1:-0}"
+  if [[ "$status" -ne 0 ]]; then
+    e2e_log_meta "standalone smoke state dir: $STATE_DIR"
+  fi
   if [[ "$status" -ne 0 && -f "$STATE_DIR/daemon.log" ]]; then
     echo "daemon log:" >&2
     cat "$STATE_DIR/daemon.log" >&2 || true
@@ -62,6 +66,9 @@ s.close()
 PY
 )"
 ENDPOINT="ws://127.0.0.1:${PORT}"
+e2e_log_value "standalone binary" "$RUN_BIN"
+e2e_log_value "state dir" "$STATE_DIR"
+e2e_log_value "endpoint" "$ENDPOINT"
 
 run_sagens() {
   env \
@@ -130,24 +137,25 @@ for raw_line in text.splitlines():
 ' "$label"
 }
 
-START_OUT="$(run_sagens start)"
+START_OUT="$(e2e_run_capture "Start daemon" "sagens start" run_sagens start)"
 assert_contains "$START_OUT" "daemon "
 
-HELP_OUT="$(run_sagens)"
+HELP_OUT="$(e2e_run_capture "Show CLI help" "sagens" run_sagens)"
 assert_contains "$HELP_OUT" "sagens <command> [args]"
 
-BOX_NEW_OUT="$(run_sagens box new)"
+BOX_NEW_OUT="$(e2e_run_capture "Create BOX" "sagens box new" run_sagens box new)"
 BOX_ID="$(printf '%s\n' "$BOX_NEW_OUT" | extract_first_uuid)"
 if [[ ! "$BOX_ID" =~ ^[0-9a-fA-F-]{36}$ ]]; then
   echo "invalid box id: $BOX_ID" >&2
   exit 1
 fi
+e2e_log_value "BOX_ID" "$BOX_ID"
 
-LIST_OUT="$(run_sagens box list)"
+LIST_OUT="$(e2e_run_capture "List BOXes" "sagens box list" run_sagens box list)"
 assert_contains "$LIST_OUT" "$BOX_ID"
 assert_contains "$LIST_OUT" "CREATED"
 
-ADMIN_ADD_OUT="$(run_sagens admin add)"
+ADMIN_ADD_OUT="$(e2e_run_capture "Create admin credential" "sagens admin add" run_sagens admin add)"
 assert_contains "$ADMIN_ADD_OUT" "Admin UUID"
 assert_contains "$ADMIN_ADD_OUT" "Admin token"
 assert_contains "$ADMIN_ADD_OUT" "Endpoint"
@@ -159,6 +167,8 @@ if [[ -z "$ADMIN_UUID" || -z "$ADMIN_TOKEN" || -z "$ADMIN_ENDPOINT" ]]; then
   printf '%s\n' "$ADMIN_ADD_OUT" >&2
   exit 1
 fi
+e2e_log_value "ADMIN_UUID" "$ADMIN_UUID"
+e2e_log_value "ADMIN_ENDPOINT" "$ADMIN_ENDPOINT"
 
 cat > "$SECOND_CONFIG_JSON" <<EOF
 {
@@ -170,19 +180,19 @@ cat > "$SECOND_CONFIG_JSON" <<EOF
 EOF
 chmod 600 "$SECOND_CONFIG_JSON"
 
-SECOND_LIST_OUT="$(run_sagens_with_config "$SECOND_CONFIG_JSON" box list)"
+SECOND_LIST_OUT="$(e2e_run_capture "List BOXes via second config" "sagens(second config) box list" run_sagens_with_config "$SECOND_CONFIG_JSON" box list)"
 assert_contains "$SECOND_LIST_OUT" "$BOX_ID"
 
-RM_OUT="$(run_sagens box rm "$BOX_ID")"
+RM_OUT="$(e2e_run_capture "Remove BOX" "sagens box rm $BOX_ID" run_sagens box rm "$BOX_ID")"
 assert_contains "$RM_OUT" "removed"
 
-FINAL_LIST_OUT="$(run_sagens box list)"
+FINAL_LIST_OUT="$(e2e_run_capture "List BOXes after removal" "sagens box list" run_sagens box list)"
 assert_contains "$FINAL_LIST_OUT" "No BOXes found."
 
-QUIT_OUT="$(run_sagens quit)"
+QUIT_OUT="$(e2e_run_capture "Stop daemon" "sagens quit" run_sagens quit)"
 assert_contains "$QUIT_OUT" "daemon stopped"
 
-QUIT_AGAIN_OUT="$(run_sagens quit)"
+QUIT_AGAIN_OUT="$(e2e_run_capture "Stop daemon again" "sagens quit" run_sagens quit)"
 assert_contains "$QUIT_AGAIN_OUT" "daemon already stopped"
 
 echo "standalone smoke e2e passed"

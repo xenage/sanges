@@ -1,37 +1,50 @@
-use std::env;
 use std::fs::{self, File};
-use std::io::Read;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::io::{self, Read};
+use std::path::Path;
 
-use anyhow::{Context, bail, ensure};
+use anyhow::{Context, anyhow, bail, ensure};
+use flate2::read::GzDecoder;
 use sequoia_openpgp as openpgp;
+use sequoia_openpgp::KeyHandle;
+use sequoia_openpgp::parse::Parse;
+use sequoia_openpgp::parse::stream::{
+    DetachedVerifierBuilder, MessageLayer, MessageStructure, VerificationHelper,
+};
+use sequoia_openpgp::policy::StandardPolicy;
 use sha2::{Digest, Sha256};
+use tar::Archive;
 
 pub(super) fn extract_member_from_tar_gz(
     archive_path: &Path,
     member_name: &str,
     destination: &Path,
 ) -> anyhow::Result<()> {
-    let tar = find_in_path("tar").context("tar is required to extract Alpine archive members")?;
-    let output = Command::new(&tar)
-        .arg("-x")
-        .arg("-O")
-        .arg("-z")
-        .arg("-f")
-        .arg(archive_path)
-        .arg(member_name)
-        .output()
-        .with_context(|| format!("running {} to extract {member_name}", tar.display()))?;
-    ensure!(
-        output.status.success(),
+    let archive =
+        File::open(archive_path).with_context(|| format!("opening {}", archive_path.display()))?;
+    let decoder = GzDecoder::new(archive);
+    let mut archive = Archive::new(decoder);
+    for entry in archive
+        .entries()
+        .with_context(|| format!("reading tar entries from {}", archive_path.display()))?
+    {
+        let mut entry =
+            entry.with_context(|| format!("reading tar entry from {}", archive_path.display()))?;
+        let path = entry
+            .path()
+            .with_context(|| format!("reading tar path from {}", archive_path.display()))?;
+        if path.as_ref() != Path::new(member_name) {
+            continue;
+        }
+        let mut output = File::create(destination)
+            .with_context(|| format!("creating {}", destination.display()))?;
+        io::copy(&mut entry, &mut output)
+            .with_context(|| format!("extracting {member_name} from {}", archive_path.display()))?;
+        return Ok(());
+    }
+    bail!(
         "missing tar member {member_name} in {}",
         archive_path.display()
-    );
-    fs::write(destination, output.stdout)
-        .with_context(|| format!("writing {}", destination.display()))?;
-    Ok(())
+    )
 }
 
 pub(super) fn verify_sha256(payload_path: &Path, checksum_path: &Path) -> anyhow::Result<()> {
@@ -73,60 +86,22 @@ pub(super) fn verify_detached_signature(
     payload_path: &Path,
     signature_path: &Path,
     cert: &openpgp::Cert,
-    signing_key: &str,
 ) -> anyhow::Result<()> {
     ensure!(
         cert.fingerprint().to_string() == crate::EXPECTED_SIGNING_FINGERPRINT,
         "unexpected signing cert fingerprint"
     );
-    let gpg = find_in_path("gpg").context("gpg is required to dearmor Alpine signing keys")?;
-    let gpgv =
-        find_in_path("gpgv").context("gpgv is required to verify Alpine detached signatures")?;
-    let temp_home = env::temp_dir().join(format!(
-        "agent-box-gpg-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .context("reading system clock")?
-            .as_nanos()
-    ));
-    fs::create_dir_all(&temp_home)?;
-    let key_path = temp_home.join("signing-key.asc");
-    fs::write(&key_path, signing_key)?;
-    let keyring_path = temp_home.join("signing-key.gpg");
-    let dearmor_status = Command::new(&gpg)
-        .arg("--batch")
-        .arg("--quiet")
-        .arg("--yes")
-        .arg("--dearmor")
-        .arg("--output")
-        .arg(&keyring_path)
-        .arg(&key_path)
-        .status()
-        .with_context(|| format!("running {} --dearmor", gpg.display()))?;
-    ensure!(dearmor_status.success(), "gpg key dearmor failed");
-
-    let verify_status = Command::new(&gpgv)
-        .arg("--keyring")
-        .arg(&keyring_path)
-        .arg(signature_path)
-        .arg(payload_path)
-        .status()
-        .with_context(|| format!("running {} --verify", gpgv.display()))?;
-    let cleanup_result = fs::remove_dir_all(&temp_home);
-    ensure!(
-        verify_status.success(),
-        "gpgv signature verification failed"
-    );
-    cleanup_result.ok();
-    Ok(())
-}
-
-fn find_in_path(binary: &str) -> Option<PathBuf> {
-    env::var_os("PATH").and_then(|paths| {
-        env::split_paths(&paths)
-            .map(|dir| dir.join(binary))
-            .find(|candidate| candidate.exists())
+    let policy = StandardPolicy::new();
+    let helper = DetachedSignatureHelper { cert: cert.clone() };
+    let mut verifier = DetachedVerifierBuilder::from_file(signature_path)
+        .with_context(|| format!("opening detached signature {}", signature_path.display()))?
+        .with_policy(&policy, None, helper)
+        .context("building detached OpenPGP verifier")?;
+    verifier.verify_file(payload_path).with_context(|| {
+        format!(
+            "verifying detached signature for {}",
+            payload_path.display()
+        )
     })
 }
 
@@ -145,5 +120,30 @@ fn decode_hex_nibble(byte: u8) -> anyhow::Result<u8> {
         b'a'..=b'f' => Ok(byte - b'a' + 10),
         b'A'..=b'F' => Ok(byte - b'A' + 10),
         _ => bail!("invalid hex byte {}", byte as char),
+    }
+}
+
+struct DetachedSignatureHelper {
+    cert: openpgp::Cert,
+}
+
+impl VerificationHelper for DetachedSignatureHelper {
+    fn get_certs(&mut self, _: &[KeyHandle]) -> openpgp::Result<Vec<openpgp::Cert>> {
+        Ok(vec![self.cert.clone()])
+    }
+
+    fn check(&mut self, structure: MessageStructure<'_>) -> openpgp::Result<()> {
+        let Some(layer) = structure.into_iter().next() else {
+            return Err(anyhow!("missing detached signature results"));
+        };
+        match layer {
+            MessageLayer::SignatureGroup { results } => {
+                if results.iter().any(|result| result.is_ok()) {
+                    return Ok(());
+                }
+                Err(anyhow!("detached signature did not validate"))
+            }
+            _ => Err(anyhow!("unexpected OpenPGP message structure")),
+        }
     }
 }
