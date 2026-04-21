@@ -14,6 +14,7 @@ use super::super::{BoxRecord, BoxSettingValue};
 #[async_trait]
 pub trait BoxManager: Send + Sync {
     async fn list_boxes(&self) -> Result<Vec<BoxRecord>>;
+    async fn get_box(&self, box_id: Uuid) -> Result<BoxRecord>;
     async fn create_box(&self) -> Result<BoxRecord>;
     async fn create_named_box(&self, name: Option<String>) -> Result<BoxRecord>;
     async fn set_box_setting(&self, box_id: Uuid, setting: BoxSettingValue) -> Result<BoxRecord>;

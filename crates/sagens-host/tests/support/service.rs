@@ -33,6 +33,9 @@ impl BoxManager for StubBoxManager {
         Ok(self.state.lock().await.boxes.values().cloned().collect())
     }
 
+    #[rustfmt::skip]
+    async fn get_box(&self, box_id: Uuid) -> sagens_host::Result<BoxRecord> { Ok(self.state.lock().await.boxes.get(&box_id).cloned().expect("box")) }
+
     async fn create_box(&self) -> sagens_host::Result<BoxRecord> {
         self.create_named_box(None).await
     }

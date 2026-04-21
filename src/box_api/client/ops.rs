@@ -4,12 +4,14 @@ mod admin;
 mod files;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::time::{Duration, Instant};
 
 use super::exec::exit_code;
 use super::tty::spawn_tty_stdin_reader;
 use super::{BoxApiClient, BoxShell, decode_bytes};
 use crate::box_api::client::terminal::TerminalMode;
 use crate::box_api::protocol::{BoxEvent, BoxRequest, BoxResponse, InteractiveTarget};
+use crate::boxes::BoxStatus;
 use crate::protocol::CompletedExecution;
 use crate::{BoxRecord, BoxSettingValue, Result, SandboxError};
 
@@ -26,6 +28,12 @@ impl BoxApiClient {
         .await
     }
 
+    pub async fn get_box(&self, box_id: uuid::Uuid) -> Result<BoxRecord> {
+        let request_id = self.next_request_id();
+        self.request_box(BoxRequest::GetBox { request_id, box_id })
+            .await
+    }
+
     pub async fn create_box(&self) -> Result<BoxRecord> {
         let request_id = self.next_request_id();
         self.request_box(BoxRequest::NewBox { request_id }).await
@@ -39,8 +47,13 @@ impl BoxApiClient {
 
     pub async fn stop_box(&self, box_id: uuid::Uuid) -> Result<BoxRecord> {
         let request_id = self.next_request_id();
-        self.request_box(BoxRequest::StopBox { request_id, box_id })
+        match self
+            .request_box(BoxRequest::StopBox { request_id, box_id })
             .await
+        {
+            Ok(record) => Ok(record),
+            Err(error) => self.recover_stopped_box(box_id, error).await,
+        }
     }
 
     pub async fn remove_box(&self, box_id: uuid::Uuid) -> Result<()> {
@@ -277,5 +290,64 @@ impl BoxApiClient {
             .await
             .map_err(|error| SandboxError::io("flushing exec stderr", error))?;
         Ok(exit_code(&completed.exit_status))
+    }
+}
+
+impl BoxApiClient {
+    async fn recover_stopped_box(
+        &self,
+        box_id: uuid::Uuid,
+        error: SandboxError,
+    ) -> Result<BoxRecord> {
+        if !is_connection_lost_error(&error) {
+            return Err(error);
+        }
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            match self.reconnect().await {
+                Ok(client) => match client.get_box(box_id).await {
+                    Ok(record) if record.status != BoxStatus::Running => return Ok(record),
+                    Ok(_) => {}
+                    Err(fetch_error) if !is_connection_lost_error(&fetch_error) => {
+                        return Err(error);
+                    }
+                    Err(_) => {}
+                },
+                Err(reconnect_error) if !is_connection_lost_error(&reconnect_error) => {
+                    return Err(error);
+                }
+                Err(_) => {}
+            }
+            if Instant::now() >= deadline {
+                return Err(error);
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+}
+
+fn is_connection_lost_error(error: &SandboxError) -> bool {
+    let message = error.to_string();
+    message.contains("reading websocket message failed")
+        || message.contains("websocket connection closed")
+        || message.contains("Connection reset without closing handshake")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_connection_lost_error;
+    use crate::SandboxError;
+
+    #[test]
+    fn detects_connection_reset_errors() {
+        assert!(is_connection_lost_error(&SandboxError::backend(
+            "reading websocket message failed: WebSocket protocol error: Connection reset without closing handshake",
+        )));
+        assert!(is_connection_lost_error(&SandboxError::backend(
+            "backend failure: websocket connection closed",
+        )));
+        assert!(!is_connection_lost_error(&SandboxError::backend(
+            "BOX is not running",
+        )));
     }
 }

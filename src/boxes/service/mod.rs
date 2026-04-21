@@ -102,6 +102,11 @@ impl BoxManager for LocalBoxService {
         Ok(records)
     }
 
+    async fn get_box(&self, box_id: Uuid) -> Result<BoxRecord> {
+        self.attach_runtime_usage(self.read_box(box_id).await?)
+            .await
+    }
+
     async fn create_box(&self) -> Result<BoxRecord> {
         self.create_named_box(None).await
     }

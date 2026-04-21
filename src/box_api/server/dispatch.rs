@@ -45,6 +45,11 @@ pub(super) async fn dispatch_request(
             let boxes = context.service.list_boxes().await?;
             send_response(&context.writer, request_id, BoxResponse::BoxList { boxes }).await?;
         }
+        BoxRequest::GetBox { request_id, box_id } => {
+            authorize_box(&principal, box_id)?;
+            let record = context.service.get_box(box_id).await?;
+            send_response(&context.writer, request_id, BoxResponse::Box { record }).await?;
+        }
         BoxRequest::NewBox { request_id } => {
             require_admin(&principal)?;
             let record = context.service.create_box().await?;

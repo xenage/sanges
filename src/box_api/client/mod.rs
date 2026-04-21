@@ -27,6 +27,7 @@ pub struct BoxApiClient {
     inner: Arc<ClientInner>,
     next_id: Arc<AtomicU64>,
     endpoint: String,
+    auth: ClientMessage,
 }
 
 pub struct BoxShell {
@@ -145,6 +146,7 @@ impl BoxApiClient {
             inner,
             next_id: Arc::new(AtomicU64::new(1)),
             endpoint: endpoint.into(),
+            auth,
         })
     }
 
@@ -154,6 +156,10 @@ impl BoxApiClient {
 
     pub fn endpoint(&self) -> &str {
         &self.endpoint
+    }
+
+    pub(super) async fn reconnect(&self) -> Result<Self> {
+        Self::connect_with_auth(&self.endpoint, self.auth.clone()).await
     }
 
     async fn send_request(&self, request: BoxRequest) -> Result<()> {

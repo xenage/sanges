@@ -47,6 +47,10 @@ pub enum BoxRequest {
     ListBoxes {
         request_id: String,
     },
+    GetBox {
+        request_id: String,
+        box_id: Uuid,
+    },
     NewBox {
         request_id: String,
     },
@@ -182,6 +186,7 @@ impl BoxRequest {
         match self {
             Self::Ping { request_id }
             | Self::ListBoxes { request_id }
+            | Self::GetBox { request_id, .. }
             | Self::NewBox { request_id }
             | Self::StartBox { request_id, .. }
             | Self::StopBox { request_id, .. }
