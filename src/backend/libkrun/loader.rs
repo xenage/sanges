@@ -57,7 +57,7 @@ pub struct Libkrun {
 pub struct PreparedMicrovm {
     libkrun: Libkrun,
     ctx: Option<u32>,
-    shutdown_fd: RawFd,
+    shutdown_fd: Option<RawFd>,
 }
 
 static KRUN_LOG_INIT: OnceLock<std::result::Result<(), String>> = OnceLock::new();
@@ -123,7 +123,7 @@ impl Libkrun {
             },
             "krun_add_vsock_port2",
         )?;
-        let shutdown_fd = call_fd(
+        let shutdown_fd = call_optional_fd(
             unsafe { (self.get_shutdown_eventfd)(ctx) },
             "krun_get_shutdown_eventfd",
         )?;
@@ -212,7 +212,7 @@ impl Libkrun {
 }
 
 impl PreparedMicrovm {
-    pub fn shutdown_fd(&self) -> RawFd {
+    pub fn shutdown_fd(&self) -> Option<RawFd> {
         self.shutdown_fd
     }
 
@@ -279,11 +279,14 @@ fn call_ctx(create: KrunFn0, name: &str) -> Result<u32> {
     Ok(code as u32)
 }
 
-fn call_fd(code: i32, name: &str) -> Result<RawFd> {
+fn call_optional_fd(code: i32, name: &str) -> Result<Option<RawFd>> {
+    if code == -libc::EINVAL {
+        return Ok(None);
+    }
     if code < 0 {
         return Err(SandboxError::backend(format!("{name} failed with {code}")));
     }
-    Ok(code)
+    Ok(Some(code))
 }
 
 fn to_cstring(path: &Path) -> Result<CString> {
@@ -306,8 +309,7 @@ fn kernel_format(format: GuestKernelFormat) -> u32 {
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use super::KrunInitLog;
-    use super::init_log_once;
+    use super::{KrunInitLog, call_optional_fd, init_log_once};
 
     static SUCCESS_CALLS: AtomicUsize = AtomicUsize::new(0);
     static FAILURE_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -352,5 +354,15 @@ mod tests {
             "backend failure: krun_init_log failed with -7"
         );
         assert_eq!(FAILURE_CALLS.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn optional_fd_treats_einval_as_absent_shutdown_fd() {
+        assert_eq!(call_optional_fd(-libc::EINVAL, "krun_get_shutdown_eventfd").unwrap(), None);
+    }
+
+    #[test]
+    fn optional_fd_returns_descriptor_when_present() {
+        assert_eq!(call_optional_fd(17, "krun_get_shutdown_eventfd").unwrap(), Some(17));
     }
 }

@@ -13,7 +13,7 @@ use crate::{Result, SandboxError};
 enum RunningVm {
     Thread {
         thread: JoinHandle<Result<()>>,
-        shutdown_fd: OwnedFd,
+        shutdown_fd: Option<OwnedFd>,
     },
     Process {
         child: Child,
@@ -22,21 +22,25 @@ enum RunningVm {
 
 pub struct LibkrunInstance {
     running: Arc<Mutex<Option<RunningVm>>>,
+    supports_graceful_shutdown: bool,
 }
 
 impl LibkrunInstance {
-    pub fn new_thread(thread: JoinHandle<Result<()>>, shutdown_fd: OwnedFd) -> Self {
+    pub fn new_thread(thread: JoinHandle<Result<()>>, shutdown_fd: Option<OwnedFd>) -> Self {
+        let supports_graceful_shutdown = shutdown_fd.is_some();
         Self {
             running: Arc::new(Mutex::new(Some(RunningVm::Thread {
                 thread,
                 shutdown_fd,
             }))),
+            supports_graceful_shutdown,
         }
     }
 
     pub fn new_process(child: Child) -> Self {
         Self {
             running: Arc::new(Mutex::new(Some(RunningVm::Process { child }))),
+            supports_graceful_shutdown: true,
         }
     }
 }
@@ -58,15 +62,18 @@ impl BackendInstance for LibkrunInstance {
 
     fn capabilities(&self) -> BackendCapabilities {
         BackendCapabilities {
-            supports_graceful_shutdown: true,
+            supports_graceful_shutdown: self.supports_graceful_shutdown,
             supports_vsock: true,
         }
     }
 }
 
-async fn shutdown_thread_vm(thread: JoinHandle<Result<()>>, shutdown_fd: OwnedFd) -> Result<()> {
-    if !thread.is_finished() {
-        signal_shutdown(&shutdown_fd)?;
+async fn shutdown_thread_vm(
+    thread: JoinHandle<Result<()>>,
+    shutdown_fd: Option<OwnedFd>,
+) -> Result<()> {
+    if !thread.is_finished() && let Some(shutdown_fd) = shutdown_fd.as_ref() {
+        signal_shutdown(shutdown_fd)?;
     }
     let joined = tokio::task::spawn_blocking(move || thread.join());
     match tokio::time::timeout(Duration::from_secs(5), joined).await {

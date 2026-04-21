@@ -40,6 +40,7 @@ cleanup() {
   local status="${1:-0}"
   if [[ "$status" -ne 0 ]]; then
     e2e_log_meta "standalone e2e state dir: $STATE_DIR"
+    dump_failure_state
   fi
   if [[ "$status" -ne 0 && -f "$STATE_DIR/daemon.log" ]]; then
     echo "daemon log:" >&2
@@ -56,6 +57,32 @@ cleanup() {
   rm -rf "$ROOT_TMP"
 }
 trap 'cleanup "$?"' EXIT
+
+dump_failure_state() {
+  e2e_begin_group "Failure diagnostics"
+  e2e_log_meta "state files:"
+  if [[ -d "$STATE_DIR" ]]; then
+    find "$STATE_DIR" -maxdepth 4 -type f | LC_ALL=C sort >&2 || true
+  else
+    e2e_log_meta "state dir missing"
+  fi
+  while IFS= read -r file; do
+    [[ -n "$file" ]] || continue
+    e2e_begin_group "Diagnostic file: ${file#$STATE_DIR/}"
+    sed 's/^/      /' "$file" >&2 || true
+    e2e_end_group
+  done < <(
+    find "$STATE_DIR" -maxdepth 4 -type f \
+      \( \
+        -name 'daemon.log' -o \
+        -name 'libkrun-runner.log' -o \
+        -name 'libkrun-runner.json' -o \
+        -name 'guest-console.log' -o \
+        -name '*.json' \
+      \) | LC_ALL=C sort
+  )
+  e2e_end_group
+}
 
 PORT="$(python3 - <<'PY'
 import socket

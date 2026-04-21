@@ -31,7 +31,7 @@ pub fn run_from_file(path: &Path) -> Result<()> {
 
 pub fn run_until_exit(
     _config: LibkrunRunnerConfig,
-    started_tx: SyncSender<Result<OwnedFd>>,
+    started_tx: SyncSender<Result<Option<OwnedFd>>>,
 ) -> Result<()> {
     #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
     {
@@ -43,7 +43,7 @@ pub fn run_until_exit(
     #[allow(unreachable_code)]
     let libkrun = Libkrun::load(&_config.library_path)?;
     let prepared = unsafe { libkrun.prepare_microvm(&_config) }?;
-    let shutdown_fd = duplicate_fd(prepared.shutdown_fd())?;
+    let shutdown_fd = prepared.shutdown_fd().map(duplicate_fd).transpose()?;
     let _ = started_tx.send(Ok(shutdown_fd));
     prepared.start_enter()
 }
