@@ -38,7 +38,7 @@ impl LibkrunRunnerConfig {
         #[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]
         let rpc_transport = "";
         format!(
-            "console=hvc0 root=/dev/vda1 ro rootfstype=ext4 rootwait loglevel=8 ignore_loglevel sandbox.workspace_device=/dev/vdb sandbox.tmpfs_mib={} sandbox.uid={} sandbox.gid={} sandbox.max_processes={} sandbox.max_open_files={} sandbox.max_file_size_bytes={} sandbox.rpc_port={} sandbox.network_enabled={}{} panic=-1",
+            "console=hvc0 root=/dev/vda ro rootfstype=ext4 rootwait loglevel=8 ignore_loglevel sandbox.workspace_device=/dev/vdb sandbox.tmpfs_mib={} sandbox.uid={} sandbox.gid={} sandbox.max_processes={} sandbox.max_open_files={} sandbox.max_file_size_bytes={} sandbox.rpc_port={} sandbox.network_enabled={}{} panic=-1",
             self.tmpfs_mib,
             self.guest_uid,
             self.guest_gid,

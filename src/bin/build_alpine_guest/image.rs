@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::{self, Seek, Write};
+use std::io;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -7,9 +7,8 @@ use anyhow::{Context, bail};
 use ext4_lwext4::{Ext4Fs, FileBlockDevice, MkfsOptions, OpenFlags, mkfs};
 use flate2::read::MultiGzDecoder;
 use tar::Archive;
-use tempfile::{TempDir, tempdir_in};
 
-pub(super) fn build_partitioned_ext4_image(
+pub(super) fn build_ext4_image(
     rootfs_dir: &Path,
     image_path: &Path,
     min_image_mib: u64,
@@ -18,20 +17,7 @@ pub(super) fn build_partitioned_ext4_image(
         fs::create_dir_all(parent)?;
     }
     let size_mib = min_image_mib.max(estimate_image_size(rootfs_dir)?);
-    let image =
-        File::create(image_path).with_context(|| format!("creating {}", image_path.display()))?;
-    image.set_len(size_mib * 1024 * 1024)?;
-    drop(image);
-    write_mbr_partition_table(image_path, size_mib)?;
-
-    let offset_bytes = 1024 * 1024_u64;
-    let filesystem_bytes =
-        64_u64.max(size_mib.saturating_sub(offset_bytes.div_ceil(1024 * 1024))) * 1024 * 1024;
-    let staging_dir = create_staging_dir(image_path)?;
-    let staging_path = staging_dir.path().join("rootfs.ext4");
-    build_staged_ext4_image(rootfs_dir, &staging_path, filesystem_bytes)?;
-    copy_staged_partition(&staging_path, image_path, offset_bytes)?;
-    Ok(())
+    build_staged_ext4_image(rootfs_dir, image_path, size_mib * 1024 * 1024)
 }
 
 pub(super) fn unpack_with_tar(archive_path: &Path, destination: &Path) -> anyhow::Result<()> {
@@ -47,30 +33,6 @@ pub(super) fn unpack_with_tar(archive_path: &Path, destination: &Path) -> anyhow
             destination.display()
         )
     })?;
-    Ok(())
-}
-
-fn write_mbr_partition_table(image_path: &Path, size_mib: u64) -> anyhow::Result<()> {
-    let total_sectors = size_mib * 1024 * 1024 / 512;
-    let start_lba = 2048_u64;
-    let partition_sectors = total_sectors
-        .checked_sub(start_lba)
-        .context("rootfs image is too small for a partitioned layout")?;
-    let mut mbr = [0_u8; 512];
-    let mut entry = [0_u8; 16];
-    entry[1..4].copy_from_slice(&[0x00, 0x02, 0x00]);
-    entry[4] = 0x83;
-    entry[5..8].copy_from_slice(&[0xff, 0xff, 0xff]);
-    entry[8..12].copy_from_slice(&(start_lba as u32).to_le_bytes());
-    entry[12..16].copy_from_slice(&(partition_sectors as u32).to_le_bytes());
-    mbr[446..462].copy_from_slice(&entry);
-    mbr[510..512].copy_from_slice(&[0x55, 0xaa]);
-
-    let mut file = File::options()
-        .write(true)
-        .open(image_path)
-        .with_context(|| format!("opening {} for MBR write", image_path.display()))?;
-    file.write_all(&mbr)?;
     Ok(())
 }
 
@@ -102,12 +64,6 @@ fn walkdir(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
         }
     }
     Ok(entries)
-}
-
-fn create_staging_dir(image_path: &Path) -> anyhow::Result<TempDir> {
-    let parent = image_path.parent().unwrap_or_else(|| Path::new("."));
-    tempdir_in(parent)
-        .with_context(|| format!("creating staging directory under {}", parent.display()))
 }
 
 fn build_staged_ext4_image(
@@ -201,25 +157,6 @@ fn ext4_path(relative_path: &Path) -> anyhow::Result<String> {
     Ok(format!("/{}", path))
 }
 
-fn copy_staged_partition(
-    staging_path: &Path,
-    image_path: &Path,
-    offset_bytes: u64,
-) -> anyhow::Result<()> {
-    let mut staging =
-        File::open(staging_path).with_context(|| format!("opening {}", staging_path.display()))?;
-    let mut image = File::options()
-        .write(true)
-        .open(image_path)
-        .with_context(|| format!("opening {} for partition copy", image_path.display()))?;
-    image
-        .seek(std::io::SeekFrom::Start(offset_bytes))
-        .with_context(|| format!("seeking {}", image_path.display()))?;
-    io::copy(&mut staging, &mut image)
-        .with_context(|| format!("copying staged ext4 image into {}", image_path.display()))?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs::File;
@@ -231,7 +168,7 @@ mod tests {
     use tar::{Builder, Header};
     use tempfile::tempdir;
 
-    use super::unpack_with_tar;
+    use super::{build_ext4_image, unpack_with_tar};
 
     #[test]
     fn unpacks_multi_member_gzip_tar() -> anyhow::Result<()> {
@@ -261,6 +198,22 @@ mod tests {
             std::fs::read(output_dir.join("usr/local/bin/sagens-guest-agent"))?,
             b"#!/bin/sh\necho ok\n"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn builds_plain_ext4_rootfs_image() -> anyhow::Result<()> {
+        let temp_dir = tempdir()?;
+        let rootfs_dir = temp_dir.path().join("rootfs");
+        let image_path = temp_dir.path().join("rootfs.raw");
+        std::fs::create_dir_all(rootfs_dir.join("etc"))?;
+        std::fs::write(rootfs_dir.join("etc/issue"), b"sagens\n")?;
+
+        build_ext4_image(&rootfs_dir, &image_path, 64)?;
+
+        let bytes = std::fs::read(&image_path)?;
+        assert_ne!(&bytes[510..512], &[0x55, 0xaa]);
+        assert_eq!(&bytes[1080..1082], &[0x53, 0xef]);
         Ok(())
     }
 

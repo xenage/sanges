@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use super::cargo_ops::run;
 
 use super::runtime::{
-    build_guest_artifacts, clean_runtime_dir, ensure_runtime_bundle, guest_kernel_path,
-    guest_rootfs_path, maybe_init_submodules, resolve_artifacts,
+    build_guest_artifacts, clean_runtime_dir, ensure_runtime_bundle, guest_artifacts_stale,
+    maybe_init_submodules, resolve_artifacts, write_guest_artifact_fingerprint,
 };
 use super::signing;
 use super::types::{EMBED_MANIFEST, EmbedManifestGuard, Platform, Profile, target_root};
@@ -55,16 +55,13 @@ fn prepare_embedded_assets(
         clean_runtime_dir(root, platform)?;
     }
     let runtime = ensure_runtime_bundle(root, platform)?;
-    if refresh_guest || missing_guest_artifacts(root, platform) {
+    if refresh_guest || guest_artifacts_stale(root, platform)? {
         build_guest_artifacts(root, platform, profile)?;
+        write_guest_artifact_fingerprint(root, platform)?;
     }
     let artifacts = resolve_artifacts(root, platform, runtime)?;
     let manifest_path = root.join(EMBED_MANIFEST);
     EmbedManifestGuard::write(&manifest_path, &artifacts)
-}
-
-fn missing_guest_artifacts(root: &Path, platform: Platform) -> bool {
-    !guest_kernel_path(root, platform).is_file() || !guest_rootfs_path(root, platform).is_file()
 }
 
 fn cargo_build_host(root: &Path, profile: Profile) -> anyhow::Result<()> {

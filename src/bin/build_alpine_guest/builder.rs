@@ -9,7 +9,7 @@ use sequoia_openpgp::cert::CertParser;
 use sequoia_openpgp::parse::Parse;
 
 use super::args::{Args, absolute_path, rootfs_tar_name};
-use super::image::build_partitioned_ext4_image;
+use super::image::build_ext4_image;
 use super::packages::{
     download_packages, extract_kernel, gzip_kernel, load_indexes, rebuild_rootfs, resolve_packages,
     validate_guest_agent_binary,
@@ -89,7 +89,7 @@ impl Builder {
         let kernel_path = output_dir.join("vmlinuz-virt");
         extract_kernel(&apk_dir, kernel_package, &kernel_path)?;
         gzip_kernel(&kernel_path, &output_dir.join("vmlinuz-virt.pe.gz"))?;
-        build_partitioned_ext4_image(
+        build_ext4_image(
             &rootfs_dir,
             &output_dir.join("rootfs.raw"),
             args.min_image_mib,

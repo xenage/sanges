@@ -147,7 +147,7 @@ impl Libkrun {
     ) -> Result<()> {
         let rootfs_id = CString::new("rootfs").expect("static");
         let workspace_id = CString::new("workspace").expect("static");
-        let root_device = CString::new("/dev/vda1").expect("static");
+        let root_device = CString::new("/dev/vda").expect("static");
         let ext4 = CString::new("ext4").expect("static");
         let mount_options = CString::new("ro").expect("static");
         let kernel_image = kernel_image_for_libkrun(config)?;
