@@ -42,8 +42,7 @@ pub async fn resolve_guest_paths(
 ) -> Result<GuestConfig> {
     let bundle_dir = state_dir.join("embedded-bundle").join(bundle_id);
     extract_runtime_support_assets(&bundle_dir, RUNTIME_SUPPORT).await?;
-    let libkrun_library =
-        resolve_libkrun_path(&bundle_dir, &guest.libkrun_library, LIBKRUN).await?;
+    let libkrun_library = resolve_path(&bundle_dir, &guest.libkrun_library, LIBKRUN).await?;
     let kernel_image = resolve_optional_path(&bundle_dir, &guest.kernel_image, KERNEL).await?;
     let rootfs_image = resolve_path(&bundle_dir, &guest.rootfs_image, ROOTFS).await?;
     let firmware = match &guest.firmware {
@@ -91,24 +90,6 @@ async fn resolve_path(
             bundle_dir.display()
         ))),
     }
-}
-
-#[cfg(target_os = "linux")]
-async fn resolve_libkrun_path(
-    bundle_dir: &Path,
-    configured: &Path,
-    embedded: Option<EmbeddedAsset>,
-) -> Result<PathBuf> {
-    resolve_optional_path(bundle_dir, configured, embedded).await
-}
-
-#[cfg(not(target_os = "linux"))]
-async fn resolve_libkrun_path(
-    bundle_dir: &Path,
-    configured: &Path,
-    embedded: Option<EmbeddedAsset>,
-) -> Result<PathBuf> {
-    resolve_path(bundle_dir, configured, embedded).await
 }
 
 async fn resolve_optional_path(

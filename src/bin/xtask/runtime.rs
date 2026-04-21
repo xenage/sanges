@@ -151,7 +151,7 @@ pub(super) fn resolve_artifacts(
         );
     }
     Ok(ResolvedArtifacts {
-        libkrun: (platform.os != PlatformOs::Linux).then_some(runtime.libkrun),
+        libkrun: Some(runtime.libkrun),
         kernel,
         rootfs,
         firmware: runtime.firmware,

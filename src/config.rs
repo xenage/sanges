@@ -107,10 +107,8 @@ impl GuestKernelFormat {
 
 impl GuestConfig {
     pub fn validate(&self) -> Result<()> {
-        if !cfg!(target_os = "linux") && self.libkrun_library.as_os_str().is_empty() {
-            return Err(SandboxError::invalid("libkrun_library must not be empty"));
-        }
         for (name, path) in [
+            ("libkrun_library", &self.libkrun_library),
             ("kernel_image", &self.kernel_image),
             ("rootfs_image", &self.rootfs_image),
             ("guest_agent_path", &self.guest_agent_path),

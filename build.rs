@@ -150,8 +150,7 @@ fn discover_default_manifest(repo_root: &Path) -> Option<EmbedManifest> {
     }
     println!("cargo:rerun-if-changed={}", lib_dir.display());
 
-    let embedded_libkrun = target_os.as_str() != "linux";
-    if (embedded_libkrun && !libkrun.is_file()) || !kernel.is_file() || !rootfs.is_file() {
+    if !libkrun.is_file() || !kernel.is_file() || !rootfs.is_file() {
         return None;
     }
     if let Some(path) = &firmware
@@ -161,7 +160,7 @@ fn discover_default_manifest(repo_root: &Path) -> Option<EmbedManifest> {
     }
 
     Some(EmbedManifest {
-        libkrun: embedded_libkrun.then_some(libkrun.clone()),
+        libkrun: Some(libkrun.clone()),
         kernel,
         rootfs,
         firmware,

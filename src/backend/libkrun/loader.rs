@@ -3,10 +3,7 @@ use std::os::fd::RawFd;
 use std::path::Path;
 use std::sync::OnceLock;
 
-#[cfg(not(target_os = "linux"))]
 use libloading::{Library, Symbol};
-#[cfg(target_os = "linux")]
-use sagens_libkrun::ffi as linked_ffi;
 
 use super::config::LibkrunRunnerConfig;
 use crate::config::GuestKernelFormat;
@@ -43,7 +40,6 @@ type KrunAddVsockPort2 = unsafe extern "C" fn(u32, u32, *const i8, bool) -> i32;
 type KrunGetShutdownEventfd = unsafe extern "C" fn(u32) -> i32;
 
 pub struct Libkrun {
-    #[cfg(not(target_os = "linux"))]
     _library: Library,
     create_ctx: KrunFn0,
     free_ctx: KrunFreeCtx,
@@ -72,52 +68,26 @@ static KRUN_LOG_INIT: OnceLock<std::result::Result<(), String>> = OnceLock::new(
 
 impl Libkrun {
     pub fn load(path: &Path) -> Result<Self> {
-        #[cfg(target_os = "linux")]
-        {
-            let _ = path;
-            Ok(Self {
-                create_ctx: linked_ffi::create_ctx,
-                free_ctx: linked_ffi::free_ctx,
-                init_log: linked_ffi::init_log,
-                set_vm_config: linked_ffi::set_vm_config,
-                set_kernel: linked_ffi::set_kernel,
-                set_firmware: linked_ffi::set_firmware,
-                set_console_output: linked_ffi::set_console_output,
-                set_kernel_console: linked_ffi::set_kernel_console,
-                add_disk3: linked_ffi::add_disk3,
-                set_root_disk_remount: linked_ffi::set_root_disk_remount,
-                disable_implicit_vsock: linked_ffi::disable_implicit_vsock,
-                add_vsock: linked_ffi::add_vsock,
-                add_vsock_port2: linked_ffi::add_vsock_port2,
-                get_shutdown_eventfd: linked_ffi::get_shutdown_eventfd,
-                start_enter: linked_ffi::start_enter,
-            })
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            let library = unsafe { Library::new(path) }
-                .map_err(|error| SandboxError::backend(format!("loading libkrun: {error}")))?;
-            Ok(Self {
-                create_ctx: unsafe { load(&library, b"krun_create_ctx\0") }?,
-                free_ctx: unsafe { load(&library, b"krun_free_ctx\0") }?,
-                init_log: unsafe { load(&library, b"krun_init_log\0") }?,
-                set_vm_config: unsafe { load(&library, b"krun_set_vm_config\0") }?,
-                set_kernel: unsafe { load(&library, b"krun_set_kernel\0") }?,
-                set_firmware: unsafe { load(&library, b"krun_set_firmware\0") }?,
-                set_console_output: unsafe { load(&library, b"krun_set_console_output\0") }?,
-                set_kernel_console: unsafe { load(&library, b"krun_set_kernel_console\0") }?,
-                add_disk3: unsafe { load(&library, b"krun_add_disk3\0") }?,
-                set_root_disk_remount: unsafe { load(&library, b"krun_set_root_disk_remount\0") }?,
-                disable_implicit_vsock: unsafe {
-                    load(&library, b"krun_disable_implicit_vsock\0")
-                }?,
-                add_vsock: unsafe { load(&library, b"krun_add_vsock\0") }?,
-                add_vsock_port2: unsafe { load(&library, b"krun_add_vsock_port2\0") }?,
-                get_shutdown_eventfd: unsafe { load(&library, b"krun_get_shutdown_eventfd\0") }?,
-                start_enter: unsafe { load(&library, b"krun_start_enter\0") }?,
-                _library: library,
-            })
-        }
+        let library = unsafe { Library::new(path) }
+            .map_err(|error| SandboxError::backend(format!("loading libkrun: {error}")))?;
+        Ok(Self {
+            create_ctx: unsafe { load(&library, b"krun_create_ctx\0") }?,
+            free_ctx: unsafe { load(&library, b"krun_free_ctx\0") }?,
+            init_log: unsafe { load(&library, b"krun_init_log\0") }?,
+            set_vm_config: unsafe { load(&library, b"krun_set_vm_config\0") }?,
+            set_kernel: unsafe { load(&library, b"krun_set_kernel\0") }?,
+            set_firmware: unsafe { load(&library, b"krun_set_firmware\0") }?,
+            set_console_output: unsafe { load(&library, b"krun_set_console_output\0") }?,
+            set_kernel_console: unsafe { load(&library, b"krun_set_kernel_console\0") }?,
+            add_disk3: unsafe { load(&library, b"krun_add_disk3\0") }?,
+            set_root_disk_remount: unsafe { load(&library, b"krun_set_root_disk_remount\0") }?,
+            disable_implicit_vsock: unsafe { load(&library, b"krun_disable_implicit_vsock\0") }?,
+            add_vsock: unsafe { load(&library, b"krun_add_vsock\0") }?,
+            add_vsock_port2: unsafe { load(&library, b"krun_add_vsock_port2\0") }?,
+            get_shutdown_eventfd: unsafe { load(&library, b"krun_get_shutdown_eventfd\0") }?,
+            start_enter: unsafe { load(&library, b"krun_start_enter\0") }?,
+            _library: library,
+        })
     }
 
     pub unsafe fn prepare_microvm(self, config: &LibkrunRunnerConfig) -> Result<PreparedMicrovm> {
@@ -271,7 +241,6 @@ impl Drop for PreparedMicrovm {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
 unsafe fn load<T: Copy>(library: &Library, symbol: &[u8]) -> Result<T> {
     let symbol: Symbol<'_, T> = unsafe { library.get(symbol) }.map_err(|error| {
         SandboxError::backend(format!(

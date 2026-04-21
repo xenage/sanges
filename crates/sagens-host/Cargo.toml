@@ -46,7 +46,6 @@ uuid.workspace = true
 zstd.workspace = true
 sagens-domain.workspace = true
 sagens-guest-contract.workspace = true
-sagens-libkrun.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
