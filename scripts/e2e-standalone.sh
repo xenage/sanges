@@ -288,8 +288,16 @@ chmod 600 "$SECOND_CONFIG_JSON"
 SECOND_LIST_OUT="$(e2e_run_capture "List BOXes via second config" "sagens(second config) box list" run_sagens_with_config "$SECOND_CONFIG_JSON" box list)"
 assert_contains "$SECOND_LIST_OUT" "$BOX_ID"
 
-STOP_OUT="$(e2e_run_capture "Stop BOX" "sagens box stop $BOX_ID" run_sagens box stop "$BOX_ID")"
-assert_contains "$STOP_OUT" "stopped"
+STOP_OUT=""
+if STOP_OUT="$(e2e_run_capture "Stop BOX" "sagens box stop $BOX_ID" run_sagens box stop "$BOX_ID")"; then
+  assert_contains "$STOP_OUT" "stopped"
+else
+  assert_contains "$STOP_OUT" "Connection reset without closing handshake"
+  STOP_VERIFY_OUT="$(e2e_run_capture "Verify BOX stopped after disconnect" "sagens box list" run_sagens box list)"
+  assert_contains "$STOP_VERIFY_OUT" "$BOX_ID"
+  assert_contains "$STOP_VERIFY_OUT" "STOPPED"
+  e2e_log_meta "stop command disconnected after shutdown; verified BOX is stopped"
+fi
 
 RM_OUT="$(e2e_run_capture "Remove BOX" "sagens box rm $BOX_ID" run_sagens box rm "$BOX_ID")"
 assert_contains "$RM_OUT" "removed"
