@@ -1,6 +1,9 @@
+use std::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use super::{KrunInitLog, call_optional_fd, init_log_once};
+use tempfile::tempdir;
+
+use super::{KrunInitLog, call_optional_fd, init_log_once, pad_kernel_file_for_mmap};
 
 static SUCCESS_CALLS: AtomicUsize = AtomicUsize::new(0);
 static FAILURE_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -61,4 +64,28 @@ fn optional_fd_returns_descriptor_when_present() {
         call_optional_fd(17, "krun_get_shutdown_eventfd").unwrap(),
         Some(17)
     );
+}
+
+#[test]
+fn pad_kernel_file_for_mmap_extends_non_aligned_images() {
+    let temp = tempdir().expect("tempdir");
+    let kernel = temp.path().join("vmlinuz-virt");
+    fs::write(&kernel, [0x4d_u8; 5]).expect("write kernel");
+
+    let padded = pad_kernel_file_for_mmap(&kernel, temp.path(), 4).expect("pad kernel");
+
+    assert_ne!(padded, kernel);
+    assert_eq!(fs::metadata(&padded).expect("metadata").len(), 8);
+    assert_eq!(&fs::read(&padded).expect("read padded")[..5], &[0x4d; 5]);
+}
+
+#[test]
+fn pad_kernel_file_for_mmap_reuses_aligned_images() {
+    let temp = tempdir().expect("tempdir");
+    let kernel = temp.path().join("vmlinuz-virt");
+    fs::write(&kernel, [0x4d_u8; 8]).expect("write kernel");
+
+    let padded = pad_kernel_file_for_mmap(&kernel, temp.path(), 4).expect("pad kernel");
+
+    assert_eq!(padded, kernel);
 }
