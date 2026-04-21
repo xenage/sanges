@@ -65,10 +65,7 @@ impl LibkrunRunnerConfig {
     }
 
     fn uses_krun_init(&self) -> bool {
-        self.kernel_image
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name == "libkrunfw-kernel.raw")
+        cfg!(target_os = "linux") && self.firmware.is_none()
     }
 
     pub fn boots_via_krun_init(&self) -> bool {
@@ -118,4 +115,59 @@ async fn write_json(path: &Path, value: &LibkrunRunnerConfig) -> Result<()> {
     fs::write(path, bytes)
         .await
         .map_err(|error| SandboxError::io("writing libkrun runner config", error))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::LibkrunRunnerConfig;
+    use crate::config::{GuestKernelFormat, IsolationMode};
+
+    fn runner_config() -> LibkrunRunnerConfig {
+        LibkrunRunnerConfig {
+            library_path: PathBuf::from("/tmp/libkrun.so"),
+            kernel_image: PathBuf::from("/tmp/vmlinuz-virt"),
+            kernel_format: GuestKernelFormat::ImageGz,
+            rootfs_image: PathBuf::from("/tmp/rootfs.raw"),
+            workspace_image: PathBuf::from("/tmp/workspace.raw"),
+            runtime_dir: PathBuf::from("/tmp/runtime"),
+            console_output_path: PathBuf::from("/tmp/guest-console.log"),
+            firmware: None,
+            guest_agent_path: PathBuf::from("/usr/local/bin/sagens-guest-agent"),
+            cpu_cores: 1,
+            memory_mb: 3584,
+            tmpfs_mib: 256,
+            max_processes: 256,
+            network_enabled: false,
+            guest_uid: 65_534,
+            guest_gid: 65_534,
+            guest_vsock_port: 11_000,
+            vsock_socket: PathBuf::from("/tmp/guest.sock"),
+            isolation_mode: IsolationMode::Compat,
+            runner_log_limit_bytes: 4 * 1024 * 1024,
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_uses_krun_init_cmdline_without_firmware() {
+        let config = runner_config();
+        let cmdline = config.kernel_cmdline();
+        assert!(config.boots_via_krun_init());
+        assert!(cmdline.contains("init=/init.krun"));
+        assert!(cmdline.contains("rootfstype=virtiofs"));
+        assert!(cmdline.contains("sandbox.workspace_device=/dev/vdb"));
+        assert!(cmdline.contains("sandbox.rpc_port=11000"));
+    }
+
+    #[test]
+    fn firmware_forces_direct_root_boot_cmdline() {
+        let mut config = runner_config();
+        config.firmware = Some(PathBuf::from("/tmp/fw.fd"));
+        let cmdline = config.kernel_cmdline();
+        assert!(!config.boots_via_krun_init());
+        assert!(cmdline.contains("root=/dev/vda"));
+        assert!(!cmdline.contains("init=/init.krun"));
+    }
 }

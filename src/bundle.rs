@@ -1,10 +1,6 @@
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-use std::slice;
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-use libloading::{Library, Symbol};
 use tokio::fs;
 use tokio::io::AsyncReadExt;
 use tokio::task;
@@ -54,14 +50,7 @@ pub async fn resolve_guest_paths(
             None => None,
         },
     };
-    let (kernel_image, kernel_format) = resolve_kernel_path(
-        &bundle_dir,
-        &libkrun_library,
-        kernel_image,
-        guest.kernel_format,
-    )
-    .await?;
-    let kernel_format = detect_kernel_format(&kernel_image, kernel_format).await?;
+    let kernel_format = detect_kernel_format(&kernel_image, guest.kernel_format).await?;
     Ok(GuestConfig {
         libkrun_library,
         kernel_image,
@@ -168,13 +157,6 @@ async fn detect_kernel_format(
     if path.as_os_str().is_empty() {
         return Ok(fallback);
     }
-    if path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name == "libkrunfw-kernel.raw")
-    {
-        return Ok(fallback);
-    }
     let mut file = match fs::File::open(path).await {
         Ok(file) => file,
         Err(_) => return Ok(fallback),
@@ -209,86 +191,6 @@ fn detect_kernel_format_from_probe(probe: &[u8], fallback: GuestKernelFormat) ->
         }
     }
     fallback
-}
-
-async fn resolve_kernel_path(
-    bundle_dir: &Path,
-    libkrun_library: &Path,
-    kernel_image: PathBuf,
-    kernel_format: GuestKernelFormat,
-) -> Result<(PathBuf, GuestKernelFormat)> {
-    if !libkrunfw_kernel_enabled() {
-        return Ok((kernel_image, kernel_format));
-    }
-    let libkrunfw = match find_libkrunfw(libkrun_library) {
-        Some(path) => path,
-        None => return Ok((kernel_image, kernel_format)),
-    };
-    let extracted = extract_libkrunfw_kernel(bundle_dir, &libkrunfw).await?;
-    Ok((extracted, GuestKernelFormat::Raw))
-}
-
-fn libkrunfw_kernel_enabled() -> bool {
-    !matches!(
-        std::env::var("SAGENS_USE_LIBKRUNFW_KERNEL").ok().as_deref(),
-        Some("0" | "false" | "no" | "off")
-    )
-}
-
-fn find_libkrunfw(libkrun_library: &Path) -> Option<PathBuf> {
-    let directory = libkrun_library.parent()?;
-    for name in [
-        "libkrunfw.so.5",
-        "libkrunfw.so",
-        "libkrunfw.5.dylib",
-        "libkrunfw.dylib",
-    ] {
-        let candidate = directory.join(name);
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-async fn extract_libkrunfw_kernel(bundle_dir: &Path, libkrunfw: &Path) -> Result<PathBuf> {
-    fs::create_dir_all(bundle_dir)
-        .await
-        .map_err(|error| SandboxError::io("creating embedded bundle directory", error))?;
-    let path = bundle_dir.join("libkrunfw-kernel.raw");
-    if path.exists() {
-        return Ok(path);
-    }
-    let bytes = read_libkrunfw_kernel(libkrunfw)?;
-    fs::write(&path, bytes)
-        .await
-        .map_err(|error| SandboxError::io("writing libkrunfw kernel image", error))?;
-    Ok(path)
-}
-
-fn read_libkrunfw_kernel(libkrunfw: &Path) -> Result<Vec<u8>> {
-    type KrunfwGetKernel =
-        unsafe extern "C" fn(*mut u64, *mut u64, *mut usize) -> *mut std::ffi::c_char;
-
-    let library = unsafe { Library::new(libkrunfw) }
-        .map_err(|error| SandboxError::backend(format!("loading libkrunfw: {error}")))?;
-    let symbol: Symbol<'_, KrunfwGetKernel> = unsafe { library.get(b"krunfw_get_kernel\0") }
-        .map_err(|error| SandboxError::backend(format!("loading krunfw_get_kernel: {error}")))?;
-    let mut load_addr = 0u64;
-    let mut entry_addr = 0u64;
-    let mut size = 0usize;
-    let pointer = unsafe { symbol(&mut load_addr, &mut entry_addr, &mut size) };
-    if pointer.is_null() || size == 0 {
-        return Err(SandboxError::backend(
-            "libkrunfw returned an empty kernel bundle",
-        ));
-    }
-    if load_addr == 0 || entry_addr == 0 {
-        return Err(SandboxError::backend(
-            "libkrunfw returned an invalid kernel load address",
-        ));
-    }
-    Ok(unsafe { slice::from_raw_parts(pointer.cast::<u8>(), size) }.to_vec())
 }
 
 #[cfg(test)]
