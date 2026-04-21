@@ -41,6 +41,7 @@ fn build_linux_x86_64_libkrunfw(root: &Path, runtime_dir: &Path) -> anyhow::Resu
         ensure_upstream_checkout(root, "third_party/upstream/libkrunfw", "Makefile")?;
     let mut make = crate::cmd::tool_command("make");
     make.arg("-C").arg(&libkrunfw_root);
+    make.arg("MAKEFLAGS=");
     make.env_remove("CARGO_TARGET_DIR");
     super::super::cargo_ops::run(
         make,

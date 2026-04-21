@@ -192,10 +192,8 @@ fn detect_kernel_format_from_probe(probe: &[u8], fallback: GuestKernelFormat) ->
     if probe.starts_with(b"\x7fELF") {
         return GuestKernelFormat::Elf;
     }
-    // Linux x86_64 vmlinuz images are EFI/PE-wrapped and usually embed the
-    // compressed ELF payload behind the DOS/PE stub. Treat them as Image*
-    // kernels so libkrun loads the embedded ELF instead of executing the PE
-    // header as a raw kernel blob.
+    // Linux x86_64 vmlinuz images are EFI/PE-wrapped and often embed a compressed ELF payload.
+    // Treat them as Image* kernels so libkrun loads the ELF instead of the PE stub as raw bytes.
     if probe.starts_with(b"MZ") {
         if probe.windows(3).any(|window| window == [0x1f, 0x8b, 0x08]) {
             return GuestKernelFormat::ImageGz;
