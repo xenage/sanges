@@ -65,7 +65,9 @@ impl LibkrunRunnerConfig {
     }
 
     pub fn uses_krun_init(&self) -> bool {
-        cfg!(target_os = "linux") && self.firmware.is_none()
+        cfg!(target_os = "linux")
+            && self.firmware.is_none()
+            && self.kernel_format == GuestKernelFormat::Raw
     }
 
     pub fn root_device(&self) -> &'static str {
@@ -164,6 +166,17 @@ mod tests {
     fn firmware_forces_direct_root_boot_cmdline() {
         let mut config = runner_config();
         config.firmware = Some(PathBuf::from("/tmp/fw.fd"));
+        let cmdline = config.kernel_cmdline();
+        assert!(!config.uses_krun_init());
+        assert!(cmdline.contains(&format!("root={}", config.root_device())));
+        assert!(!cmdline.contains("init=/init.krun"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn non_raw_linux_kernel_uses_direct_root_boot_cmdline() {
+        let mut config = runner_config();
+        config.kernel_format = GuestKernelFormat::ImageGz;
         let cmdline = config.kernel_cmdline();
         assert!(!config.uses_krun_init());
         assert!(cmdline.contains(&format!("root={}", config.root_device())));
