@@ -8,12 +8,42 @@ on:
     tags:
       - "*"
 
+concurrency:
+  group: build-and-release-${{ github.sha }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/tags/') }}
+
 permissions:
   contents: read
 
 jobs:
+  gate:
+    name: Gate
+    runs-on: ubuntu-24.04
+    outputs:
+      should_run: ${{ steps.gate.outputs.should_run }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - id: gate
+        name: Decide whether this workflow should run
+        run: |
+          should_run=true
+          if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            git fetch --force --tags origin
+            if git tag --points-at "${GITHUB_SHA}" | grep -q .; then
+              echo "Skipping main push workflow because ${GITHUB_SHA} is already tagged."
+              should_run=false
+            fi
+          fi
+          echo "should_run=${should_run}" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build (${{ matrix.platform }})
+    if: needs.gate.outputs.should_run == 'true'
+    needs: gate
     runs-on: ${{ matrix.os }}
     environment: apple
     strategy:
@@ -136,7 +166,10 @@ jobs:
 
   test_smoke:
     name: Smoke (${{ matrix.platform }})
-    needs: build
+    if: needs.gate.outputs.should_run == 'true'
+    needs:
+      - gate
+      - build
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -171,8 +204,10 @@ jobs:
 
   test_linux_full:
     name: Full Linux E2E (xenage-kvm)
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build
+    if: needs.gate.outputs.should_run == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+    needs:
+      - gate
+      - build
     runs-on: xenage-kvm
     env:
       ARTIFACT_VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('ci-{0}', github.sha) }}
@@ -200,10 +235,12 @@ jobs:
 
   release:
     name: Release
-    if: startsWith(github.ref, 'refs/tags/')
+    if: needs.gate.outputs.should_run == 'true' && startsWith(github.ref, 'refs/tags/')
     needs:
+      - gate
       - build
       - test_smoke
+      - test_linux_full
     runs-on: ubuntu-24.04
     permissions:
       contents: write
