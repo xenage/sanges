@@ -13,7 +13,8 @@ use anyhow::{Context, ensure};
 
 use super::cargo_ops::{cargo_build, run};
 use super::types::{
-    GUEST_AGENT_MANIFEST, Platform, PlatformOs, Profile, ResolvedArtifacts, absolutize, target_root,
+    GUEST_AGENT_MANIFEST, Platform, PlatformArch, PlatformOs, Profile, ResolvedArtifacts,
+    absolutize, target_root,
 };
 pub(super) use guest_fingerprint::{guest_artifacts_stale, write_guest_artifact_fingerprint};
 use submodules::ensure_upstream_checkout;
@@ -49,8 +50,14 @@ pub(super) fn build_guest_artifacts(
         .arg("--output-dir")
         .arg(&output_dir);
     run(command, "building Alpine guest artifacts")?;
-    if platform.os == PlatformOs::Macos && platform.arch == super::types::PlatformArch::Aarch64 {
-        libkrunfw_kernel::materialize_macos_aarch64_guest_kernel(&work_dir, &output_dir)?;
+    match (platform.os, platform.arch) {
+        (PlatformOs::Macos, PlatformArch::Aarch64) => {
+            libkrunfw_kernel::materialize_macos_aarch64_guest_kernel(&work_dir, &output_dir)?;
+        }
+        (PlatformOs::Linux, PlatformArch::X86_64) => {
+            libkrunfw_kernel::materialize_linux_x86_64_guest_kernel(&work_dir, &output_dir)?;
+        }
+        _ => {}
     }
     Ok(())
 }

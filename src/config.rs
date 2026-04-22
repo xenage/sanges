@@ -93,10 +93,7 @@ pub enum GuestKernelFormat {
 
 impl GuestKernelFormat {
     pub fn default_for_host() -> Self {
-        match (std::env::consts::OS, std::env::consts::ARCH) {
-            ("linux", "x86_64") => Self::ImageGz,
-            _ => Self::Raw,
-        }
+        Self::Raw
     }
 
     pub fn parse(value: &str) -> Result<Self> {
