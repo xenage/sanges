@@ -14,6 +14,8 @@ pub(super) struct TempKeychain {
     path: PathBuf,
     app_identity: String,
     installer_identity: Option<String>,
+    original_default_keychain: Option<PathBuf>,
+    original_search_list: Vec<PathBuf>,
 }
 
 impl TempKeychain {
@@ -23,51 +25,71 @@ impl TempKeychain {
         let path = dir.join("sagens-signing.keychain-db");
         let keychain_password =
             settings.required("KEYCHAIN_PASSWORD", settings.keychain_password.as_deref())?;
+        let original_default_keychain = current_default_keychain().ok();
+        let original_search_list = current_search_list().unwrap_or_default();
 
-        run(
-            crate::cmd::tool_command("security")
-                .arg("create-keychain")
-                .arg("-p")
-                .arg(keychain_password)
-                .arg(&path),
-            "creating temporary signing keychain",
-        )?;
-        run(
-            crate::cmd::tool_command("security")
-                .arg("set-keychain-settings")
-                .arg("-lut")
-                .arg("21600")
-                .arg(&path),
-            "configuring temporary signing keychain",
-        )?;
-        run(
-            crate::cmd::tool_command("security")
-                .arg("unlock-keychain")
-                .arg("-p")
-                .arg(keychain_password)
-                .arg(&path),
-            "unlocking temporary signing keychain",
-        )?;
-        import_certificates(&dir, &path, settings)?;
-        run(
-            crate::cmd::tool_command("security")
-                .arg("set-key-partition-list")
-                .arg("-S")
-                .arg("apple-tool:,apple:,codesign:,productbuild:,productsign:")
-                .arg("-s")
-                .arg("-k")
-                .arg(keychain_password)
-                .arg(&path),
-            "configuring keychain access for codesign",
-        )?;
-        let app_identity = find_codesign_identity(&path)?;
-        let installer_identity = find_installer_identity(&path).ok();
-        Ok(Self {
-            dir,
-            path,
-            app_identity,
-            installer_identity,
-        })
+        let configured = (|| -> anyhow::Result<(String, Option<String>)> {
+            run(
+                crate::cmd::tool_command("security")
+                    .arg("create-keychain")
+                    .arg("-p")
+                    .arg(keychain_password)
+                    .arg(&path),
+                "creating temporary signing keychain",
+            )?;
+            run(
+                crate::cmd::tool_command("security")
+                    .arg("set-keychain-settings")
+                    .arg("-lut")
+                    .arg("21600")
+                    .arg(&path),
+                "configuring temporary signing keychain",
+            )?;
+            run(
+                crate::cmd::tool_command("security")
+                    .arg("unlock-keychain")
+                    .arg("-p")
+                    .arg(keychain_password)
+                    .arg(&path),
+                "unlocking temporary signing keychain",
+            )?;
+            activate_keychain(&path, &original_search_list)?;
+            import_certificates(&dir, &path, settings)?;
+            run(
+                crate::cmd::tool_command("security")
+                    .arg("set-key-partition-list")
+                    .arg("-S")
+                    .arg("apple-tool:,apple:,codesign:,productbuild:,productsign:")
+                    .arg("-s")
+                    .arg("-k")
+                    .arg(keychain_password)
+                    .arg(&path),
+                "configuring keychain access for codesign",
+            )?;
+            let app_identity = find_codesign_identity(&path)?;
+            let installer_identity = find_installer_identity(&path).ok();
+            Ok((app_identity, installer_identity))
+        })();
+
+        match configured {
+            Ok((app_identity, installer_identity)) => Ok(Self {
+                dir,
+                path,
+                app_identity,
+                installer_identity,
+                original_default_keychain,
+                original_search_list,
+            }),
+            Err(error) => {
+                cleanup_failed_keychain(
+                    &path,
+                    &dir,
+                    &original_default_keychain,
+                    &original_search_list,
+                );
+                Err(error)
+            }
+        }
     }
 
     pub(super) fn identity(&self) -> &str {
@@ -85,6 +107,7 @@ impl TempKeychain {
 
 impl Drop for TempKeychain {
     fn drop(&mut self) {
+        restore_keychain_state(&self.original_default_keychain, &self.original_search_list);
         let _ = crate::cmd::tool_command("security")
             .arg("delete-keychain")
             .arg(&self.path)
@@ -144,10 +167,13 @@ fn import_certificate(
         crate::cmd::tool_command("security")
             .arg("import")
             .arg(&certificate)
+            .arg("-f")
+            .arg("pkcs12")
             .arg("-k")
             .arg(keychain)
             .arg("-P")
             .arg(p12_password)
+            .arg("-A")
             .arg("-T")
             .arg("/usr/bin/codesign")
             .arg("-T")
@@ -183,4 +209,104 @@ fn decode_base64(value: &str) -> anyhow::Result<Vec<u8>> {
         }
     }
     Ok(output)
+}
+
+fn activate_keychain(path: &Path, original_search_list: &[PathBuf]) -> anyhow::Result<()> {
+    let mut search_list = Vec::with_capacity(original_search_list.len() + 1);
+    search_list.push(path.to_path_buf());
+    for existing in original_search_list {
+        if existing != path {
+            search_list.push(existing.clone());
+        }
+    }
+    set_search_list(&search_list)?;
+    set_default_keychain(path)
+}
+
+fn cleanup_failed_keychain(
+    path: &Path,
+    dir: &Path,
+    original_default_keychain: &Option<PathBuf>,
+    original_search_list: &[PathBuf],
+) {
+    restore_keychain_state(original_default_keychain, original_search_list);
+    let _ = crate::cmd::tool_command("security")
+        .arg("delete-keychain")
+        .arg(path)
+        .stdin(Stdio::null())
+        .status();
+    let _ = fs::remove_dir_all(dir);
+}
+
+fn restore_keychain_state(
+    original_default_keychain: &Option<PathBuf>,
+    original_search_list: &[PathBuf],
+) {
+    if let Some(path) = original_default_keychain {
+        let _ = set_default_keychain(path);
+    }
+    if !original_search_list.is_empty() {
+        let _ = set_search_list(original_search_list);
+    }
+}
+
+fn current_default_keychain() -> anyhow::Result<PathBuf> {
+    let output = crate::cmd::tool_command("security")
+        .arg("default-keychain")
+        .arg("-d")
+        .arg("user")
+        .output()
+        .context("reading current default keychain")?;
+    let stdout = String::from_utf8(output.stdout).context("decoding default-keychain output")?;
+    parse_keychain_paths(&stdout)
+        .into_iter()
+        .next()
+        .context("default-keychain output did not include a keychain path")
+}
+
+fn current_search_list() -> anyhow::Result<Vec<PathBuf>> {
+    let output = crate::cmd::tool_command("security")
+        .arg("list-keychains")
+        .arg("-d")
+        .arg("user")
+        .output()
+        .context("reading current keychain search list")?;
+    let stdout = String::from_utf8(output.stdout).context("decoding list-keychains output")?;
+    Ok(parse_keychain_paths(&stdout))
+}
+
+fn set_default_keychain(path: &Path) -> anyhow::Result<()> {
+    run(
+        crate::cmd::tool_command("security")
+            .arg("default-keychain")
+            .arg("-d")
+            .arg("user")
+            .arg("-s")
+            .arg(path),
+        "setting default signing keychain",
+    )
+}
+
+fn set_search_list(paths: &[PathBuf]) -> anyhow::Result<()> {
+    let mut command = crate::cmd::tool_command("security");
+    command
+        .arg("list-keychains")
+        .arg("-d")
+        .arg("user")
+        .arg("-s");
+    for path in paths {
+        command.arg(path);
+    }
+    run(&mut command, "updating keychain search list")
+}
+
+fn parse_keychain_paths(stdout: &str) -> Vec<PathBuf> {
+    stdout
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| line.trim_matches('"'))
+        .filter(|line| !line.is_empty())
+        .map(PathBuf::from)
+        .collect()
 }
