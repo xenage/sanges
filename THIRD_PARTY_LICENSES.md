@@ -32,6 +32,13 @@ accompanied by the corresponding source for the bundled kernel and library
 code. This repository keeps the upstream source tree under
 `third_party/upstream/libkrunfw` for provenance and rebuild workflows.
 
+### `third_party/upstream/linux-loader`
+
+- Upstream project: `linux-loader`
+- Repository path: `third_party/upstream/linux-loader`
+- License: Apache-2.0 AND BSD-3-Clause
+- Source of truth: upstream crate license files in that directory
+
 ## Generated guest artifacts
 
 `sagens` packaging can embed generated guest assets into standalone release

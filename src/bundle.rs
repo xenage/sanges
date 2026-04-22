@@ -140,7 +140,7 @@ mod tests {
     use tempfile::tempdir;
 
     use super::resolve_guest_paths;
-    use crate::{GuestConfig, GuestKernelFormat};
+    use crate::GuestConfig;
 
     #[tokio::test]
     async fn keeps_explicit_paths_when_present() {

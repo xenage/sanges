@@ -6,6 +6,7 @@ members = [
     "crates/sagens-libkrun",
     "xtask",
 ]
+exclude = ["third_party/upstream/libkrun"]
 default-members = [
     "crates/sagens-host",
     "crates/sagens-guest-agent",
@@ -47,3 +48,6 @@ zstd = "0.13.3"
 
 sagens-guest-contract = { path = "crates/sagens-guest-contract" }
 sagens-libkrun = { path = "crates/sagens-libkrun" }
+
+[patch.crates-io]
+linux-loader = { path = "third_party/upstream/linux-loader" }

@@ -1,3 +1,9 @@
+#[path = "update/platform.rs"]
+mod platform;
+#[cfg(test)]
+#[path = "update/tests.rs"]
+mod tests;
+
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -10,6 +16,7 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 use crate::{Result, SandboxError};
+use platform::TargetPlatform;
 
 const DEFAULT_RELEASE_REPO: &str = "xenage/sanges";
 
@@ -25,29 +32,6 @@ pub struct SelfUpdateOutcome {
 pub enum SelfUpdateAction {
     AlreadyCurrent,
     Updated,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TargetPlatform {
-    LinuxX86_64,
-    LinuxAarch64,
-    MacosX86_64,
-    MacosAarch64,
-}
-
-impl TargetPlatform {
-    fn detect() -> Result<Self> {
-        platform_from_parts(std::env::consts::OS, std::env::consts::ARCH)
-    }
-
-    fn slug(self) -> &'static str {
-        match self {
-            Self::LinuxX86_64 => "linux-x86_64",
-            Self::LinuxAarch64 => "linux-aarch64",
-            Self::MacosX86_64 => "macos-x86_64",
-            Self::MacosAarch64 => "macos-aarch64",
-        }
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -186,10 +170,10 @@ async fn fetch_bytes(client: &Client, url: &str) -> Result<Vec<u8>> {
         })
 }
 
-fn select_release_assets<'a>(
-    release: &'a ReleaseMetadata,
+fn select_release_assets(
+    release: &ReleaseMetadata,
     platform: TargetPlatform,
-) -> Result<(&'a ReleaseAsset, &'a ReleaseAsset)> {
+) -> Result<(&ReleaseAsset, &ReleaseAsset)> {
     let binary_name = format!("sagens-{}-{}", release.tag_name, platform.slug());
     let checksum_name = format!("{binary_name}.sha256");
     let binary_asset = release
@@ -388,91 +372,4 @@ fn replace_binary(staged_path: &Path, executable_path: &Path) -> Result<()> {
 
 fn cleanup_staged_file(path: &Path) {
     let _ = std::fs::remove_file(path);
-}
-
-fn platform_from_parts(os: &str, arch: &str) -> Result<TargetPlatform> {
-    match (os, arch) {
-        ("linux", "x86_64") | ("linux", "amd64") => Ok(TargetPlatform::LinuxX86_64),
-        ("linux", "aarch64") | ("linux", "arm64") => Ok(TargetPlatform::LinuxAarch64),
-        ("macos", "x86_64") | ("darwin", "x86_64") => Ok(TargetPlatform::MacosX86_64),
-        ("macos", "aarch64") | ("macos", "arm64") | ("darwin", "aarch64") | ("darwin", "arm64") => {
-            Ok(TargetPlatform::MacosAarch64)
-        }
-        _ => Err(SandboxError::invalid(format!(
-            "self-update is not supported on platform {os}/{arch}"
-        ))),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{
-        ReleaseAsset, ReleaseMetadata, TargetPlatform, decode_sha256_hex, parse_sha256_manifest,
-        platform_from_parts, select_release_assets,
-    };
-
-    #[test]
-    fn parses_supported_platforms() {
-        assert_eq!(
-            platform_from_parts("linux", "x86_64").expect("platform"),
-            TargetPlatform::LinuxX86_64
-        );
-        assert_eq!(
-            platform_from_parts("linux", "arm64").expect("platform"),
-            TargetPlatform::LinuxAarch64
-        );
-        assert_eq!(
-            platform_from_parts("macos", "x86_64").expect("platform"),
-            TargetPlatform::MacosX86_64
-        );
-        assert_eq!(
-            platform_from_parts("darwin", "arm64").expect("platform"),
-            TargetPlatform::MacosAarch64
-        );
-    }
-
-    #[test]
-    fn selects_platform_assets_from_release() {
-        let release = ReleaseMetadata {
-            tag_name: "v1.2.3".into(),
-            assets: vec![
-                ReleaseAsset {
-                    name: "sagens-v1.2.3-linux-x86_64".into(),
-                    browser_download_url: "https://example.invalid/bin".into(),
-                },
-                ReleaseAsset {
-                    name: "sagens-v1.2.3-linux-x86_64.sha256".into(),
-                    browser_download_url: "https://example.invalid/bin.sha256".into(),
-                },
-            ],
-        };
-
-        let (binary, checksum) =
-            select_release_assets(&release, TargetPlatform::LinuxX86_64).expect("assets");
-
-        assert_eq!(binary.name, "sagens-v1.2.3-linux-x86_64");
-        assert_eq!(checksum.name, "sagens-v1.2.3-linux-x86_64.sha256");
-    }
-
-    #[test]
-    fn parses_sha256_manifest_line() {
-        let digest = parse_sha256_manifest(
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  sagens-v1.2.3-linux-x86_64\n",
-            "sagens-v1.2.3-linux-x86_64",
-        )
-        .expect("digest");
-
-        assert_eq!(digest, decode_sha256_hex(&"aa".repeat(32)).expect("hex"));
-    }
-
-    #[test]
-    fn accepts_binary_checksum_marker() {
-        let digest = parse_sha256_manifest(
-            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb *sagens-v1.2.3-macos-aarch64\n",
-            "sagens-v1.2.3-macos-aarch64",
-        )
-        .expect("digest");
-
-        assert_eq!(digest, decode_sha256_hex(&"bb".repeat(32)).expect("hex"));
-    }
 }

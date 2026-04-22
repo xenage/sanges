@@ -70,27 +70,6 @@ pub(super) fn remote_error(message: impl Into<String>) -> SandboxError {
     SandboxError::backend(message)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::remote_error;
-
-    #[test]
-    fn remote_backend_errors_do_not_double_wrap() {
-        let error =
-            remote_error("backend failure: guest connect failed: unexpected exception: 0x20");
-        assert_eq!(
-            error.to_string(),
-            "backend failure: guest connect failed: unexpected exception: 0x20"
-        );
-    }
-
-    #[test]
-    fn remote_timeout_errors_preserve_timeout_kind() {
-        let error = remote_error("timeout: guest RPC did not become ready");
-        assert_eq!(error.to_string(), "timeout: guest RPC did not become ready");
-    }
-}
-
 impl BoxApiClient {
     pub async fn connect(config: &UserConfig) -> Result<Self> {
         Self::connect_with_auth(
@@ -317,4 +296,25 @@ fn decode_bytes(context: &str, value: &str) -> Result<Vec<u8>> {
     base64::engine::general_purpose::STANDARD
         .decode(value)
         .map_err(|error| SandboxError::protocol(format!("{context}: {error}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remote_error;
+
+    #[test]
+    fn remote_backend_errors_do_not_double_wrap() {
+        let error =
+            remote_error("backend failure: guest connect failed: unexpected exception: 0x20");
+        assert_eq!(
+            error.to_string(),
+            "backend failure: guest connect failed: unexpected exception: 0x20"
+        );
+    }
+
+    #[test]
+    fn remote_timeout_errors_preserve_timeout_kind() {
+        let error = remote_error("timeout: guest RPC did not become ready");
+        assert_eq!(error.to_string(), "timeout: guest RPC did not become ready");
+    }
 }

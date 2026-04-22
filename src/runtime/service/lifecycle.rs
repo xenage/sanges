@@ -257,8 +257,8 @@ fn should_attach_boot_detail(stage: &str, error: &crate::SandboxError) -> bool {
 fn boot_failure_detail(run_layout: &crate::workspace::RunLayout) -> Option<String> {
     let guest_console = host_log::read_file_tail_lossy(&run_layout.guest_console_log, 200).ok();
     let runner_log = host_log::read_file_tail_lossy(&run_layout.runner_log, 200).ok();
-    select_boot_failure_line(guest_console.as_deref(), &GUEST_FAILURE_PATTERNS)
-        .or_else(|| select_boot_failure_line(runner_log.as_deref(), &RUNNER_FAILURE_PATTERNS))
+    select_boot_failure_line(guest_console.as_deref(), GUEST_FAILURE_PATTERNS)
+        .or_else(|| select_boot_failure_line(runner_log.as_deref(), RUNNER_FAILURE_PATTERNS))
         .or_else(|| last_nonempty_line(guest_console.as_deref()))
         .or_else(|| last_nonempty_line(runner_log.as_deref()))
 }

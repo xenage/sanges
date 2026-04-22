@@ -2,23 +2,27 @@
 mod cells;
 #[path = "output/format.rs"]
 mod format;
+#[path = "output/lists.rs"]
+mod lists;
 #[cfg(test)]
 #[path = "output/tests.rs"]
 mod tests;
 
 use std::io::{self, Write};
 
-use crate::auth::AdminCredentialBundle;
 use crate::boxes::BoxRecord;
 use crate::config::IsolationMode;
 use crate::sagens::ui::{Align, BadgeStyle, Cell, Theme};
 use crate::sagens::update::{SelfUpdateAction, SelfUpdateOutcome};
-use crate::workspace::{FileNode, WorkspaceChange, WorkspaceCheckpointRecord};
 
-use self::cells::{isolation_mode_label, styled_change_cell, styled_kind_cell, styled_status_cell};
+use self::cells::{isolation_mode_label, styled_status_cell};
 use self::format::{
     fallback_settings, format_box_cpu_setting, format_box_fs_setting, format_box_memory_setting,
-    format_box_network_setting, format_box_process_setting, format_bytes,
+    format_box_network_setting, format_box_process_setting,
+};
+pub use self::lists::{
+    print_admin_bundle, print_admin_removed, print_changes, print_checkpoint_delete_ok,
+    print_checkpoint_id, print_checkpoint_restore_ok, print_checkpoints, print_files,
 };
 
 pub fn print_help(text: &str) -> io::Result<()> {
@@ -221,203 +225,6 @@ pub fn print_removed(box_id: uuid::Uuid) -> io::Result<()> {
         theme.title("BOX"),
         theme.badge("removed", BadgeStyle::Danger),
         theme.code(box_id.to_string())
-    );
-    io::stdout().flush()
-}
-
-pub fn print_checkpoint_id(checkpoint_id: &str) -> io::Result<()> {
-    let theme = Theme::stdout();
-    println!(
-        "{} {} {}",
-        theme.title("checkpoint"),
-        theme.badge("created", BadgeStyle::Success),
-        theme.code(checkpoint_id)
-    );
-    io::stdout().flush()
-}
-
-pub fn print_checkpoint_restore_ok(checkpoint_id: &str) -> io::Result<()> {
-    let theme = Theme::stdout();
-    println!(
-        "{} {} {}",
-        theme.title("checkpoint"),
-        theme.badge("restored", BadgeStyle::Warning),
-        theme.code(checkpoint_id)
-    );
-    io::stdout().flush()
-}
-
-pub fn print_checkpoint_delete_ok(checkpoint_id: &str) -> io::Result<()> {
-    let theme = Theme::stdout();
-    println!(
-        "{} {} {}",
-        theme.title("checkpoint"),
-        theme.badge("deleted", BadgeStyle::Danger),
-        theme.code(checkpoint_id)
-    );
-    io::stdout().flush()
-}
-
-pub fn print_checkpoints(checkpoints: &[WorkspaceCheckpointRecord]) -> io::Result<()> {
-    let theme = Theme::stdout();
-    println!(
-        "{} {}",
-        theme.title("Checkpoint lineage"),
-        theme.badge(&format!("{} total", checkpoints.len()), BadgeStyle::Accent)
-    );
-    println!();
-    if checkpoints.is_empty() {
-        println!("{}", theme.dim("No checkpoints found."));
-        return io::stdout().flush();
-    }
-
-    let rows = checkpoints
-        .iter()
-        .map(|checkpoint| {
-            let name = checkpoint.summary.name.as_deref().unwrap_or("—");
-            let metadata =
-                serde_json::to_string(&checkpoint.summary.metadata).unwrap_or_else(|_| "{}".into());
-            vec![
-                Cell::rendered(
-                    checkpoint.summary.checkpoint_id.clone(),
-                    theme.code(&checkpoint.summary.checkpoint_id),
-                    Align::Left,
-                ),
-                Cell::plain(name),
-                Cell::right(checkpoint.summary.created_at_ms.to_string()),
-                Cell::plain(metadata),
-            ]
-        })
-        .collect::<Vec<_>>();
-
-    println!(
-        "{}",
-        theme.table(
-            vec![
-                Cell::plain("CHECKPOINT"),
-                Cell::plain("NAME"),
-                Cell::plain("CREATED_MS"),
-                Cell::plain("METADATA"),
-            ],
-            rows,
-        )
-    );
-    io::stdout().flush()
-}
-
-pub fn print_admin_bundle(bundle: &AdminCredentialBundle) -> io::Result<()> {
-    let theme = Theme::stdout();
-    println!(
-        "{} {}",
-        theme.title("admin"),
-        theme.badge("added", BadgeStyle::Success)
-    );
-    println!();
-    println!(
-        "{}",
-        theme.table(
-            vec![Cell::plain("Field"), Cell::plain("Value")],
-            vec![
-                vec![
-                    Cell::plain("Admin UUID"),
-                    Cell::rendered(
-                        bundle.admin_uuid.to_string(),
-                        theme.code(bundle.admin_uuid.to_string()),
-                        Align::Left,
-                    ),
-                ],
-                vec![
-                    Cell::plain("Admin token"),
-                    Cell::rendered(
-                        bundle.admin_token.clone(),
-                        theme.code(bundle.admin_token.clone()),
-                        Align::Left,
-                    ),
-                ],
-                vec![
-                    Cell::plain("Endpoint"),
-                    Cell::rendered(
-                        bundle.endpoint.clone(),
-                        theme.code(bundle.endpoint.clone()),
-                        Align::Left,
-                    ),
-                ],
-            ],
-        )
-    );
-    io::stdout().flush()
-}
-
-pub fn print_admin_removed() -> io::Result<()> {
-    let theme = Theme::stdout();
-    println!(
-        "{} {}",
-        theme.title("admin"),
-        theme.badge("removed", BadgeStyle::Danger)
-    );
-    io::stdout().flush()
-}
-
-pub fn print_files(entries: &[FileNode]) -> io::Result<()> {
-    let theme = Theme::stdout();
-    println!(
-        "{} {}",
-        theme.title("Workspace files"),
-        theme.badge(&format!("{} entries", entries.len()), BadgeStyle::Info)
-    );
-    println!();
-    if entries.is_empty() {
-        println!("{}", theme.dim("No files matched the requested path."));
-        return io::stdout().flush();
-    }
-    let rows = entries
-        .iter()
-        .map(|entry| {
-            vec![
-                styled_kind_cell(&theme, &entry.kind),
-                Cell::plain(&entry.path),
-                Cell::right(format_bytes(entry.size)),
-            ]
-        })
-        .collect::<Vec<_>>();
-    println!(
-        "{}",
-        theme.table(
-            vec![
-                Cell::plain("TYPE"),
-                Cell::plain("PATH"),
-                Cell::plain("SIZE")
-            ],
-            rows,
-        )
-    );
-    io::stdout().flush()
-}
-
-pub fn print_changes(changes: &[WorkspaceChange]) -> io::Result<()> {
-    let theme = Theme::stdout();
-    println!(
-        "{} {}",
-        theme.title("Workspace diff"),
-        theme.badge(&format!("{} changes", changes.len()), BadgeStyle::Accent)
-    );
-    println!();
-    if changes.is_empty() {
-        println!("{}", theme.dim("No tracked changes."));
-        return io::stdout().flush();
-    }
-    let rows = changes
-        .iter()
-        .map(|change| {
-            vec![
-                styled_change_cell(&theme, change.git_label()),
-                Cell::plain(&change.path),
-            ]
-        })
-        .collect::<Vec<_>>();
-    println!(
-        "{}",
-        theme.table(vec![Cell::plain("CHANGE"), Cell::plain("PATH")], rows)
     );
     io::stdout().flush()
 }
