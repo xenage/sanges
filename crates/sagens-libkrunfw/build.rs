@@ -117,7 +117,7 @@ fn render_rust_source(kernel_output: &Path, load_addr: u64, entry_addr: u64) -> 
 #[repr(C, align(4096))]
 struct AlignedKernelBundle<const N: usize>([u8; N]);
 
-static KERNEL_BUNDLE: AlignedKernelBundle<{{KERNEL_SIZE}}> =
+static mut KERNEL_BUNDLE: AlignedKernelBundle<{{KERNEL_SIZE}}> =
     AlignedKernelBundle(*include_bytes!("{kernel_path}"));
 
 pub static STATIC_KRUNFW_LINKED: () = ();
@@ -140,10 +140,10 @@ pub unsafe extern "C" fn krunfw_get_kernel(
     }}
     if !size.is_null() {{
         unsafe {{
-            *size = KERNEL_BUNDLE.0.len();
+            *size = {{KERNEL_SIZE}};
         }}
     }}
-    KERNEL_BUNDLE.0.as_ptr().cast_mut().cast()
+    core::ptr::addr_of_mut!(KERNEL_BUNDLE.0).cast::<u8>().cast::<c_char>()
 }}
 "#,
     )
