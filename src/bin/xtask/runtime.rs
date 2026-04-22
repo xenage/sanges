@@ -27,9 +27,8 @@ pub(super) use guest_fingerprint::{guest_artifacts_stale, write_guest_artifact_f
 use libkrunfw::{ensure_macos_aarch64_libkrunfw, maybe_build_libkrunfw_support};
 use macos_hvf::build_macos_x86_64_hvf_runtime;
 use source_build::{
-    macos_cc_linux_value, patch_libkrun_sources, prebuilt_runtime_bundle_ready,
-    preferred_host_clang, preferred_ld_lld, preferred_libclang_dir, prepend_env_path,
-    stage_libclang_runtime,
+    macos_cc_linux_value, prebuilt_runtime_bundle_ready, preferred_host_clang, preferred_ld_lld,
+    preferred_libclang_dir, prepend_env_path, stage_libclang_runtime,
 };
 use submodules::ensure_upstream_checkout;
 
@@ -280,7 +279,6 @@ fn build_libkrun_from_source(
     runtime_dir: &Path,
 ) -> anyhow::Result<()> {
     let libkrun_root = ensure_upstream_checkout(root, "third_party/upstream/libkrun", "Makefile")?;
-    let _source_patches = patch_libkrun_sources(&libkrun_root, platform)?;
     let mut make = crate::cmd::tool_command("make");
     make.arg("-C").arg(&libkrun_root);
     make.arg(format!("-j{}", host_parallelism()));
