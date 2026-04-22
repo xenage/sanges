@@ -13,10 +13,9 @@ mod kernel;
 #[cfg(test)]
 #[path = "loader/tests.rs"]
 mod tests;
-use kernel::kernel_image_for_libkrun;
+use kernel::{kernel_format, kernel_image_for_libkrun};
 
 const KRUN_DISK_FORMAT_RAW: u32 = 0;
-const KRUN_KERNEL_FORMAT_RAW: u32 = 0;
 const KRUN_SYNC_RELAXED: u32 = 1;
 const KRUN_LOG_LEVEL_TRACE: u32 = 5;
 const KRUN_LOG_STYLE_NEVER: u32 = 2;
@@ -112,7 +111,7 @@ impl Libkrun {
                 krun::krun_set_kernel(
                     ctx,
                     kernel.as_ptr().cast(),
-                    KRUN_KERNEL_FORMAT_RAW,
+                    kernel_format(config.kernel_format),
                     std::ptr::null(),
                     cmdline.as_ptr().cast(),
                 )

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::task;
 
-use crate::{GuestConfig, Result, SandboxError};
+use crate::{GuestConfig, GuestKernelFormat, Result, SandboxError};
 
 #[derive(Clone, Copy)]
 pub enum Compression {
@@ -33,6 +33,7 @@ pub async fn resolve_guest_paths(
 ) -> Result<GuestConfig> {
     let bundle_dir = state_dir.join("embedded-bundle").join(bundle_id);
     let kernel_image = resolve_optional_path(&bundle_dir, &guest.kernel_image, KERNEL).await?;
+    let kernel_format = GuestKernelFormat::detect_from_path(&kernel_image, guest.kernel_format);
     let rootfs_image = resolve_path(&bundle_dir, &guest.rootfs_image, ROOTFS).await?;
     let firmware = match &guest.firmware {
         Some(path) if !path.as_os_str().is_empty() => Some(path.clone()),
@@ -43,7 +44,7 @@ pub async fn resolve_guest_paths(
     };
     Ok(GuestConfig {
         kernel_image,
-        kernel_format: guest.kernel_format,
+        kernel_format,
         rootfs_image,
         firmware,
         guest_agent_path: guest.guest_agent_path.clone(),

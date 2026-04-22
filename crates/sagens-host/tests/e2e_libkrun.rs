@@ -33,13 +33,17 @@ mod host_e2e {
             .expect("local wheelhouse must exist in SAGENS_WHEELHOUSE or .e2e-wheelhouse");
         configure_libkrun_test_helper();
         let guest_assets = guest_assets();
+        let guest_kernel_format = GuestKernelFormat::detect_from_path(
+            &guest_assets.kernel_image,
+            GuestKernelFormat::default_for_host(),
+        );
         let state_dir = state_dir();
         let runtime: Arc<dyn SandboxService> = Arc::new(
             AgentSandboxService::new(RuntimeConfig {
                 state_dir: state_dir.clone(),
                 guest: GuestConfig {
                     kernel_image: guest_assets.kernel_image,
-                    kernel_format: GuestKernelFormat::Raw,
+                    kernel_format: guest_kernel_format,
                     rootfs_image: guest_assets.rootfs_image,
                     firmware: guest_assets.firmware,
                     guest_agent_path: env("SAGENS_GUEST_AGENT_PATH")

@@ -75,3 +75,20 @@ fn rejects_secure_mode_without_cgroup_parent() {
     };
     assert!(config.validate().is_err());
 }
+
+#[test]
+fn detects_gzip_wrapped_x86_kernel_probe() {
+    let probe = b"MZ\x00\x00padding\x1f\x8b\x08";
+    assert_eq!(
+        GuestKernelFormat::detect_from_probe(probe, GuestKernelFormat::Raw),
+        GuestKernelFormat::ImageGz
+    );
+}
+
+#[test]
+fn falls_back_when_probe_is_unknown() {
+    assert_eq!(
+        GuestKernelFormat::detect_from_probe(b"raw-kernel", GuestKernelFormat::Raw),
+        GuestKernelFormat::Raw
+    );
+}

@@ -1,4 +1,7 @@
+use std::fs::File;
+use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -81,6 +84,71 @@ pub struct GuestConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum GuestKernelFormat {
     Raw,
+    Elf,
+    PeGz,
+    ImageBz2,
+    ImageGz,
+    ImageZstd,
+}
+
+impl GuestKernelFormat {
+    pub fn default_for_host() -> Self {
+        match (std::env::consts::OS, std::env::consts::ARCH) {
+            ("linux", "x86_64") => Self::ImageGz,
+            _ => Self::Raw,
+        }
+    }
+
+    pub fn parse(value: &str) -> Result<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "raw" => Ok(Self::Raw),
+            "elf" => Ok(Self::Elf),
+            "pegz" | "pe_gz" | "pe-gz" => Ok(Self::PeGz),
+            "imagebz2" | "image_bz2" | "image-bz2" => Ok(Self::ImageBz2),
+            "imagegz" | "image_gz" | "image-gz" => Ok(Self::ImageGz),
+            "imagezstd" | "image_zstd" | "image-zstd" => Ok(Self::ImageZstd),
+            _ => Err(SandboxError::invalid(format!(
+                "unsupported guest kernel format: {value}"
+            ))),
+        }
+    }
+
+    pub fn detect_from_path(path: &Path, fallback: Self) -> Self {
+        if path.as_os_str().is_empty() {
+            return fallback;
+        }
+        let Ok(mut file) = File::open(path) else {
+            return fallback;
+        };
+        let mut probe = [0u8; 8192];
+        let Ok(read) = file.read(&mut probe) else {
+            return fallback;
+        };
+        Self::detect_from_probe(&probe[..read], fallback)
+    }
+
+    pub fn detect_from_probe(probe: &[u8], fallback: Self) -> Self {
+        if probe.starts_with(b"\x7fELF") {
+            return Self::Elf;
+        }
+        // Linux x86_64 distro kernels are often EFI/PE-wrapped and carry the real
+        // compressed kernel image deeper in the file.
+        if probe.starts_with(b"MZ") {
+            if probe.windows(3).any(|window| window == [0x1f, 0x8b, 0x08]) {
+                return Self::ImageGz;
+            }
+            if probe.windows(3).any(|window| window == *b"BZh") {
+                return Self::ImageBz2;
+            }
+            if probe
+                .windows(4)
+                .any(|window| window == [0x28, 0xb5, 0x2f, 0xfd])
+            {
+                return Self::ImageZstd;
+            }
+        }
+        fallback
+    }
 }
 
 impl GuestConfig {

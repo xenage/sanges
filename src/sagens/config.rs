@@ -44,11 +44,14 @@ pub fn build_runtime_config_for_endpoint(
     endpoint: &str,
 ) -> Result<RuntimeConfig> {
     let prefer_embedded_assets = crate::bundle::has_embedded_assets();
+    let kernel_image = default_guest_path(ProjectArtifactKind::Kernel, prefer_embedded_assets);
+    let kernel_format =
+        GuestKernelFormat::detect_from_path(&kernel_image, GuestKernelFormat::default_for_host());
     Ok(RuntimeConfig {
         state_dir: state_dir.to_path_buf(),
         guest: GuestConfig {
-            kernel_image: default_guest_path(ProjectArtifactKind::Kernel, prefer_embedded_assets),
-            kernel_format: GuestKernelFormat::Raw,
+            kernel_image,
+            kernel_format,
             rootfs_image: default_guest_path(ProjectArtifactKind::Rootfs, prefer_embedded_assets),
             firmware: default_firmware_path(prefer_embedded_assets),
             guest_agent_path: PathBuf::from("/usr/local/bin/sagens-guest-agent"),
