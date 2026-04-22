@@ -47,9 +47,9 @@ pub fn build_runtime_config_for_endpoint(
     Ok(RuntimeConfig {
         state_dir: state_dir.to_path_buf(),
         guest: GuestConfig {
-            kernel_image: default_guest_path("kernel", prefer_embedded_assets),
+            kernel_image: default_guest_path(ProjectArtifactKind::Kernel, prefer_embedded_assets),
             kernel_format: GuestKernelFormat::Raw,
-            rootfs_image: default_guest_path("rootfs", prefer_embedded_assets),
+            rootfs_image: default_guest_path(ProjectArtifactKind::Rootfs, prefer_embedded_assets),
             firmware: default_firmware_path(prefer_embedded_assets),
             guest_agent_path: PathBuf::from("/usr/local/bin/sagens-guest-agent"),
             guest_vsock_port: env::var("SAGENS_GUEST_VSOCK_PORT")
@@ -91,7 +91,14 @@ pub fn build_runtime_config_for_endpoint(
     })
 }
 
-fn default_guest_path(kind: &str, prefer_embedded_assets: bool) -> PathBuf {
+#[derive(Clone, Copy)]
+enum ProjectArtifactKind {
+    Kernel,
+    Rootfs,
+    Firmware,
+}
+
+fn default_guest_path(kind: ProjectArtifactKind, prefer_embedded_assets: bool) -> PathBuf {
     if prefer_embedded_assets {
         return PathBuf::new();
     }
@@ -102,7 +109,9 @@ fn default_firmware_path(prefer_embedded_assets: bool) -> Option<PathBuf> {
     if prefer_embedded_assets {
         return None;
     }
-    optional_path(&default_project_artifact_candidates("firmware"))
+    optional_path(&default_project_artifact_candidates(
+        ProjectArtifactKind::Firmware,
+    ))
 }
 
 pub fn parse_endpoint_addr(endpoint: &str) -> Result<SocketAddr> {
@@ -179,23 +188,26 @@ fn parse_isolation_mode() -> Result<IsolationMode> {
     }
 }
 
-fn default_project_artifact_candidates(kind: &str) -> Vec<PathBuf> {
+fn default_project_artifact_candidates(kind: ProjectArtifactKind) -> Vec<PathBuf> {
     let root = workspace_root();
-    match (kind, env::consts::OS, env::consts::ARCH) {
-        ("firmware", "macos", "x86_64") | ("firmware", "macos", "aarch64") => {
+    let guest_dir = match (env::consts::OS, env::consts::ARCH) {
+        ("macos", "x86_64") | ("linux", "x86_64") => Some(root.join("artifacts/alpine-x86_64")),
+        ("macos", "aarch64") | ("linux", "aarch64") => Some(root.join("artifacts/alpine-aarch64")),
+        _ => None,
+    };
+    match kind {
+        ProjectArtifactKind::Kernel => guest_dir
+            .into_iter()
+            .map(|dir| dir.join("vmlinuz-virt"))
+            .collect(),
+        ProjectArtifactKind::Rootfs => guest_dir
+            .into_iter()
+            .map(|dir| dir.join("rootfs.raw"))
+            .collect(),
+        ProjectArtifactKind::Firmware if env::consts::OS == "macos" => {
             vec![root.join("third_party/upstream/libkrun/edk2/KRUN_EFI.silent.fd")]
         }
-        ("kernel", "macos", "x86_64") => vec![root.join("artifacts/alpine-x86_64/vmlinuz-virt")],
-        ("kernel", "macos", "aarch64") => vec![root.join("artifacts/alpine-aarch64/vmlinuz-virt")],
-        ("kernel", "linux", "aarch64") => vec![root.join("artifacts/alpine-aarch64/vmlinuz-virt")],
-        ("kernel", "linux", "x86_64") => vec![root.join("artifacts/alpine-x86_64/vmlinuz-virt")],
-        ("rootfs", "macos", "x86_64") | ("rootfs", "linux", "x86_64") => {
-            vec![root.join("artifacts/alpine-x86_64/rootfs.raw")]
-        }
-        ("rootfs", "macos", "aarch64") | ("rootfs", "linux", "aarch64") => {
-            vec![root.join("artifacts/alpine-aarch64/rootfs.raw")]
-        }
-        _ => Vec::new(),
+        ProjectArtifactKind::Firmware => Vec::new(),
     }
 }
 

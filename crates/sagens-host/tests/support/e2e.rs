@@ -1,6 +1,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+pub struct GuestAssets {
+    pub kernel_image: PathBuf,
+    pub rootfs_image: PathBuf,
+    pub firmware: Option<PathBuf>,
+}
+
 pub fn env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.is_empty())
 }
@@ -37,6 +43,47 @@ pub fn host_binary() -> PathBuf {
 
 pub fn default_wheelhouse() -> Option<PathBuf> {
     first_existing_dir(&[repo_root().join(".e2e-wheelhouse")])
+}
+
+pub fn guest_assets() -> GuestAssets {
+    let repo_root = repo_root();
+    let guest_dir = match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("macos", "x86_64") | ("linux", "x86_64") => repo_root.join("artifacts/alpine-x86_64"),
+        ("macos", "aarch64") | ("linux", "aarch64") => repo_root.join("artifacts/alpine-aarch64"),
+        (os, arch) => panic!("unsupported e2e host platform {os}/{arch}"),
+    };
+    let kernel_image = env("SAGENS_KERNEL")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| guest_dir.join("vmlinuz-virt"));
+    let rootfs_image = env("SAGENS_ROOTFS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| guest_dir.join("rootfs.raw"));
+    let firmware = env("SAGENS_FIRMWARE").map(PathBuf::from).or_else(|| {
+        (std::env::consts::OS == "macos")
+            .then(|| repo_root.join("third_party/upstream/libkrun/edk2/KRUN_EFI.silent.fd"))
+    });
+    assert!(
+        kernel_image.is_file(),
+        "missing e2e guest kernel: {}",
+        kernel_image.display()
+    );
+    assert!(
+        rootfs_image.is_file(),
+        "missing e2e guest rootfs: {}",
+        rootfs_image.display()
+    );
+    if let Some(path) = &firmware {
+        assert!(
+            path.is_file(),
+            "missing e2e guest firmware: {}",
+            path.display()
+        );
+    }
+    GuestAssets {
+        kernel_image,
+        rootfs_image,
+        firmware,
+    }
 }
 
 pub fn ensure_host_binary_ready(host_binary: &Path) {

@@ -4,6 +4,3 @@
 [submodule "third_party/upstream/libkrunfw"]
 	path = third_party/upstream/libkrunfw
 	url = https://github.com/containers/libkrunfw.git
-[submodule "third_party/upstream/krunkit"]
-	path = third_party/upstream/krunkit
-	url = https://github.com/containers/krunkit.git
