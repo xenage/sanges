@@ -14,6 +14,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::thread;
 
 use anyhow::{Context, ensure};
 
@@ -282,6 +283,7 @@ fn build_libkrun_from_source(
     let _source_patches = patch_libkrun_sources(&libkrun_root, platform)?;
     let mut make = crate::cmd::tool_command("make");
     make.arg("-C").arg(&libkrun_root);
+    make.arg(format!("-j{}", host_parallelism()));
     // build-local.sh points Cargo at a shared temp target dir, but the upstream
     // Makefile expects artifacts under its local ./target tree.
     make.env_remove("CARGO_TARGET_DIR");
@@ -343,6 +345,10 @@ fn build_libkrun_from_source(
     }
     maybe_build_libkrunfw_support(root, platform, runtime_dir)?;
     Ok(())
+}
+
+fn host_parallelism() -> usize {
+    thread::available_parallelism().map_or(1, usize::from)
 }
 
 fn upstream_libkrun_arch(platform: Platform) -> Option<&'static str> {

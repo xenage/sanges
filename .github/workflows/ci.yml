@@ -12,6 +12,9 @@ permissions:
 jobs:
   quality:
     runs-on: ubuntu-24.04
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@v6
         with:
@@ -20,6 +23,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Restore cargo cache
         uses: actions/cache@v5
@@ -52,3 +58,7 @@ jobs:
 
       - name: Run tests
         run: cargo test
+
+      - name: Show sccache stats
+        if: always()
+        run: ${SCCACHE_PATH} --show-stats

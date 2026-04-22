@@ -1,6 +1,7 @@
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::thread;
 
 use anyhow::{Context, ensure};
 
@@ -96,6 +97,7 @@ fn build_linux_libkrunfw(
         ensure_upstream_checkout(root, "third_party/upstream/libkrunfw", "Makefile")?;
     let mut make = crate::cmd::tool_command("make");
     make.arg("-C").arg(&libkrunfw_root);
+    make.arg(format!("-j{}", host_parallelism()));
     make.arg("MAKEFLAGS=");
     if let Some(arch) = arch {
         make.arg(format!("ARCH={arch}"));
@@ -118,6 +120,10 @@ fn build_linux_libkrunfw(
         )
     })?;
     Ok(())
+}
+
+fn host_parallelism() -> usize {
+    thread::available_parallelism().map_or(1, usize::from)
 }
 
 fn find_built_libkrunfw(libkrunfw_root: &Path) -> anyhow::Result<PathBuf> {
