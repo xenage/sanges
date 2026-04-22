@@ -71,28 +71,6 @@ impl Platform {
         Ok(Self { os, arch })
     }
 
-    pub(super) fn parse(value: &str) -> anyhow::Result<Self> {
-        match value {
-            "macos-aarch64" => Ok(Self {
-                os: PlatformOs::Macos,
-                arch: PlatformArch::Aarch64,
-            }),
-            "macos-x86_64" => Ok(Self {
-                os: PlatformOs::Macos,
-                arch: PlatformArch::X86_64,
-            }),
-            "linux-aarch64" => Ok(Self {
-                os: PlatformOs::Linux,
-                arch: PlatformArch::Aarch64,
-            }),
-            "linux-x86_64" => Ok(Self {
-                os: PlatformOs::Linux,
-                arch: PlatformArch::X86_64,
-            }),
-            _ => bail!("unsupported platform: {value}"),
-        }
-    }
-
     pub(super) fn as_str(self) -> &'static str {
         match (self.os, self.arch) {
             (PlatformOs::Macos, PlatformArch::Aarch64) => "macos-aarch64",
@@ -115,53 +93,19 @@ impl Platform {
             PlatformArch::X86_64 => "x86_64-unknown-linux-musl",
         }
     }
-
-    pub(super) fn lib_name(self) -> &'static str {
-        match self.os {
-            PlatformOs::Macos => "libkrun.dylib",
-            PlatformOs::Linux => "libkrun.so",
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(super) struct RuntimeBundle {
-    pub(super) libkrun: PathBuf,
-    pub(super) firmware: Option<PathBuf>,
-    pub(super) runtime_support: Vec<PathBuf>,
-    pub(super) source: RuntimeBundleSource,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum RuntimeBundleSource {
-    Prebuilt,
-    SourceBuild,
-}
-
-impl RuntimeBundleSource {
-    pub(super) fn label(self) -> &'static str {
-        match self {
-            Self::Prebuilt => "prebuilt",
-            Self::SourceBuild => "built-from-source",
-        }
-    }
 }
 
 #[derive(Debug, Serialize)]
 struct EmbedManifest {
-    libkrun: Option<PathBuf>,
     kernel: PathBuf,
     rootfs: PathBuf,
     firmware: Option<PathBuf>,
-    runtime_support: Vec<PathBuf>,
 }
 
 pub(super) struct ResolvedArtifacts {
-    pub(super) libkrun: Option<PathBuf>,
     pub(super) kernel: PathBuf,
     pub(super) rootfs: PathBuf,
     pub(super) firmware: Option<PathBuf>,
-    pub(super) runtime_support: Vec<PathBuf>,
 }
 
 pub(super) struct EmbedManifestGuard {
@@ -174,11 +118,9 @@ impl EmbedManifestGuard {
             fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
         }
         let manifest = EmbedManifest {
-            libkrun: artifacts.libkrun.clone(),
             kernel: artifacts.kernel.clone(),
             rootfs: artifacts.rootfs.clone(),
             firmware: artifacts.firmware.clone(),
-            runtime_support: artifacts.runtime_support.clone(),
         };
         let bytes = serde_json::to_vec_pretty(&manifest).context("encoding embed manifest")?;
         fs::write(path, bytes).with_context(|| format!("writing {}", path.display()))?;

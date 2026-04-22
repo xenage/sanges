@@ -1,13 +1,10 @@
 use std::path::{Path, PathBuf};
 
 use crate::backend::libkrun::config::LibkrunRunnerConfig;
-use crate::config::GuestKernelFormat;
 use crate::{Result, SandboxError};
 
 pub(super) fn kernel_image_for_libkrun(config: &LibkrunRunnerConfig) -> Result<PathBuf> {
-    if cfg!(all(target_os = "linux", target_arch = "x86_64"))
-        && config.kernel_format == GuestKernelFormat::Raw
-    {
+    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         return pad_kernel_file_for_mmap(
             &config.kernel_image,
             &config.runtime_dir,
@@ -15,17 +12,6 @@ pub(super) fn kernel_image_for_libkrun(config: &LibkrunRunnerConfig) -> Result<P
         );
     }
     Ok(config.kernel_image.clone())
-}
-
-pub(super) fn kernel_format(format: GuestKernelFormat) -> u32 {
-    match format {
-        GuestKernelFormat::Raw => 0,
-        GuestKernelFormat::Elf => 1,
-        GuestKernelFormat::PeGz => 2,
-        GuestKernelFormat::ImageBz2 => 3,
-        GuestKernelFormat::ImageGz => 4,
-        GuestKernelFormat::ImageZstd => 5,
-    }
 }
 
 pub(super) fn pad_kernel_file_for_mmap(

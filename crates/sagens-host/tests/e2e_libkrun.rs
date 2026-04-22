@@ -37,19 +37,8 @@ mod host_e2e {
             AgentSandboxService::new(RuntimeConfig {
                 state_dir: state_dir.clone(),
                 guest: GuestConfig {
-                    libkrun_library: env("SAGENS_LIBKRUN_LIBRARY")
-                        .map(PathBuf::from)
-                        .unwrap_or_default(),
                     kernel_image: env("SAGENS_KERNEL").map(PathBuf::from).unwrap_or_default(),
-                    kernel_format: env("SAGENS_KERNEL_FORMAT")
-                        .map(|value| GuestKernelFormat::parse(&value).expect("kernel format"))
-                        .unwrap_or_else(|| {
-                            if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-                                GuestKernelFormat::PeGz
-                            } else {
-                                GuestKernelFormat::Raw
-                            }
-                        }),
+                    kernel_format: GuestKernelFormat::Raw,
                     rootfs_image: env("SAGENS_ROOTFS").map(PathBuf::from).unwrap_or_default(),
                     firmware: env("SAGENS_FIRMWARE").map(PathBuf::from),
                     guest_agent_path: env("SAGENS_GUEST_AGENT_PATH")

@@ -5,7 +5,7 @@ use super::parse_box::{
     parse_box_checkpoint, parse_box_exec, parse_box_remove, parse_box_set, parse_box_start,
     parse_box_stop,
 };
-use super::{AdminCommand, BoxCommand, Command, HelpTopic};
+use super::{AdminCommand, BoxCommand, Command, DaemonCommand, DaemonLogCommand, HelpTopic};
 
 pub fn parse(mut args: Vec<String>) -> Result<Command> {
     if args.is_empty() {
@@ -15,7 +15,8 @@ pub fn parse(mut args: Vec<String>) -> Result<Command> {
         "help" | "-h" | "--help" => Ok(Command::Help(parse_help_topic(&args)?)),
         "start" => parse_leaf(args, HelpTopic::Start, Command::Start),
         "quit" => parse_leaf(args, HelpTopic::Quit, Command::Quit),
-        "daemon" => parse_leaf(args, HelpTopic::Daemon, Command::Daemon),
+        "update" => parse_leaf(args, HelpTopic::Update, Command::Update),
+        "daemon" => parse_daemon(args),
         "admin" => parse_admin(args),
         "box" => parse_box(args),
         other => Err(SandboxError::invalid(format!(
@@ -33,6 +34,62 @@ fn parse_leaf(args: Vec<String>, topic: HelpTopic, command: Command) -> Result<C
         return Ok(Command::Help(topic));
     }
     Err(SandboxError::invalid(render_usage_hint(topic)))
+}
+
+fn parse_daemon(mut args: Vec<String>) -> Result<Command> {
+    if args.is_empty() {
+        return Ok(Command::Daemon(DaemonCommand::Run));
+    }
+    if help_only(&args) {
+        return Ok(Command::Help(HelpTopic::Daemon));
+    }
+    match args.remove(0).as_str() {
+        "log" => parse_daemon_log(args),
+        other => Err(SandboxError::invalid(format!(
+            "unknown daemon command {other}\n\n{}",
+            render_usage_hint(HelpTopic::Daemon)
+        ))),
+    }
+}
+
+fn parse_daemon_log(mut args: Vec<String>) -> Result<Command> {
+    if args.is_empty() {
+        return Ok(Command::Daemon(DaemonCommand::Log(DaemonLogCommand {
+            tail: None,
+            follow: false,
+        })));
+    }
+    if help_only(&args) {
+        return Ok(Command::Help(HelpTopic::DaemonLog));
+    }
+
+    let mut tail = None;
+    let mut follow = false;
+    while !args.is_empty() {
+        let arg = args.remove(0);
+        match arg.as_str() {
+            "--follow" | "-f" => follow = true,
+            "--tail" => {
+                let value =
+                    single_arg_from(&mut args, render_usage_hint(HelpTopic::DaemonLog).as_str())?;
+                tail = Some(parse_tail_lines(&value)?);
+            }
+            _ if arg.starts_with("--tail=") => {
+                tail = Some(parse_tail_lines(&arg["--tail=".len()..])?);
+            }
+            _ if is_help_flag(&arg) => return Ok(Command::Help(HelpTopic::DaemonLog)),
+            _ => {
+                return Err(SandboxError::invalid(render_usage_hint(
+                    HelpTopic::DaemonLog,
+                )));
+            }
+        }
+    }
+
+    Ok(Command::Daemon(DaemonCommand::Log(DaemonLogCommand {
+        tail,
+        follow,
+    })))
 }
 
 fn parse_admin(mut args: Vec<String>) -> Result<Command> {
@@ -53,6 +110,16 @@ fn parse_admin(mut args: Vec<String>) -> Result<Command> {
             render_usage_hint(HelpTopic::Admin)
         ))),
     }
+}
+
+fn parse_tail_lines(value: &str) -> Result<usize> {
+    let lines = value
+        .parse::<usize>()
+        .map_err(|error| SandboxError::invalid(format!("invalid --tail value {value}: {error}")))?;
+    if lines == 0 {
+        return Err(SandboxError::invalid("--tail must be greater than zero"));
+    }
+    Ok(lines)
 }
 
 fn parse_box(mut args: Vec<String>) -> Result<Command> {

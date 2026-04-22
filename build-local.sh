@@ -16,7 +16,6 @@ TEMP_ROOT_OWNED=0
 STATE_DIR_PREEXISTED=0
 
 PLATFORM=""
-RUNTIME_DIR=""
 EXPECTED_BINARY=""
 PACKAGE_VERSION="local"
 PACKAGE_ARGS=()
@@ -187,10 +186,8 @@ print_banner() {
 
 detect_platform() {
   PLATFORM="$(host_platform)"
-  RUNTIME_DIR="$ROOT/third_party/runtime/$PLATFORM"
 
   log_meta "host platform: $PLATFORM"
-  log_meta "runtime source: $RUNTIME_DIR"
 }
 
 prepare_build_workspace() {
@@ -224,19 +221,6 @@ prepare_build_workspace() {
     log_meta "guest work dir: $SAGENS_GUEST_WORK_DIR (preconfigured)"
   fi
 
-  if [[ -z "${SAGENS_RUNTIME_BUNDLE_DIR:-}" ]]; then
-    export SAGENS_RUNTIME_BUNDLE_DIR="$TEMP_ROOT/runtime"
-    if [[ -d "$RUNTIME_DIR" ]]; then
-      cp -R "$RUNTIME_DIR" "$SAGENS_RUNTIME_BUNDLE_DIR"
-      log_meta "seeded runtime bundle from host cache"
-    else
-      log_meta "runtime cache missing, xtask will prepare it if needed"
-    fi
-    log_meta "runtime bundle dir: $SAGENS_RUNTIME_BUNDLE_DIR"
-  else
-    log_meta "runtime bundle dir: $SAGENS_RUNTIME_BUNDLE_DIR (preconfigured)"
-  fi
-
   if [[ -e "$STATE_DIR" ]]; then
     STATE_DIR_PREEXISTED=1
     log_meta "state dir already exists: $STATE_DIR"
@@ -253,9 +237,7 @@ sync_submodules() {
 
   log_meta "refreshing required upstream submodules"
   if ! git -C "$ROOT" submodule update --init --recursive \
-    third_party/upstream/libkrun \
-    third_party/upstream/libkrunfw \
-    third_party/upstream/krunkit; then
+    third_party/upstream/libkrun; then
     log_warn "failed to initialize upstream submodules; continuing with existing checkout"
   fi
 }

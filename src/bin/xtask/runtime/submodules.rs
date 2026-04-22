@@ -16,8 +16,6 @@ pub(super) fn maybe_init_submodules(root: &Path) -> anyhow::Result<()> {
             "--init",
             "--recursive",
             "third_party/upstream/libkrun",
-            "third_party/upstream/libkrunfw",
-            "third_party/upstream/krunkit",
         ])
         .stdin(Stdio::null())
         .status()

@@ -39,13 +39,8 @@ fn rejects_reserved_guest_vsock_port() {
 
 fn guest_config() -> GuestConfig {
     GuestConfig {
-        libkrun_library: PathBuf::from("/usr/lib/libkrun.so"),
         kernel_image: PathBuf::from("/box/vmlinux"),
-        kernel_format: if cfg!(target_os = "macos") {
-            GuestKernelFormat::PeGz
-        } else {
-            GuestKernelFormat::Raw
-        },
+        kernel_format: GuestKernelFormat::Raw,
         rootfs_image: PathBuf::from("/box/rootfs.raw"),
         firmware: if cfg!(target_os = "macos") {
             Some(PathBuf::from("/usr/share/libkrun/edk2-aarch64-code.fd"))

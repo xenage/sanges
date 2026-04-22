@@ -12,6 +12,7 @@ use crate::auth::AdminCredentialBundle;
 use crate::boxes::BoxRecord;
 use crate::config::IsolationMode;
 use crate::sagens::ui::{Align, BadgeStyle, Cell, Theme};
+use crate::sagens::update::{SelfUpdateAction, SelfUpdateOutcome};
 use crate::workspace::{FileNode, WorkspaceChange, WorkspaceCheckpointRecord};
 
 use self::cells::{isolation_mode_label, styled_change_cell, styled_kind_cell, styled_status_cell};
@@ -54,6 +55,42 @@ pub fn print_quit_message(was_running: bool) -> io::Result<()> {
         theme.badge("already stopped", BadgeStyle::Muted)
     };
     println!("{} {}", theme.title("sagens daemon"), badge);
+    io::stdout().flush()
+}
+
+pub fn print_update_message(outcome: &SelfUpdateOutcome) -> io::Result<()> {
+    let theme = Theme::stdout();
+    let (badge, detail) = match outcome.action {
+        SelfUpdateAction::AlreadyCurrent => (
+            theme.badge("already latest", BadgeStyle::Muted),
+            theme.dim(format!(
+                "release={}  platform={}  binary={}",
+                outcome.release_tag,
+                outcome.platform,
+                outcome.executable_path.display()
+            )),
+        ),
+        SelfUpdateAction::Updated => (
+            theme.badge("updated", BadgeStyle::Success),
+            theme.dim(format!(
+                "release={}  platform={}  binary={}",
+                outcome.release_tag,
+                outcome.platform,
+                outcome.executable_path.display()
+            )),
+        ),
+    };
+
+    println!("{} {}", theme.title("sagens update"), badge);
+    println!("{detail}");
+    if matches!(outcome.action, SelfUpdateAction::Updated) {
+        println!(
+            "{}",
+            theme.muted(
+                "Restart a running daemon if you want background work to use the new binary."
+            )
+        );
+    }
     io::stdout().flush()
 }
 

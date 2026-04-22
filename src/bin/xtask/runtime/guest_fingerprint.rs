@@ -58,6 +58,7 @@ fn guest_artifact_fingerprint_inputs() -> &'static [&'static str] {
         "Cargo.lock",
         "src/bin/build-alpine-guest.rs",
         "src/bin/build_alpine_guest",
+        "src/bin/xtask/runtime",
         "crates/sagens-guest-agent",
         "crates/sagens-guest-contract",
         "guest-agent",

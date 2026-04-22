@@ -74,7 +74,6 @@ jobs:
       BUILD_LOCAL_SIGN: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && '1' || '' }}
       SAGENS_SKIP_INSTALLER: "1"
       CARGO_TARGET_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/target
-      SAGENS_RUNTIME_BUNDLE_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/runtime
       SAGENS_GUEST_OUTPUT_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/guest-output
       SAGENS_GUEST_WORK_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/guest-work
     steps:
@@ -98,24 +97,6 @@ jobs:
             ${{ env.SAGENS_GUEST_WORK_DIR }}
           key: release-build-${{ matrix.platform }}
 
-      - name: Restore runtime bundle cache
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.SAGENS_RUNTIME_BUNDLE_DIR }}
-          key: release-runtime-${{ matrix.platform }}
-
-      - name: Restore libkrunfw build cache
-        if: startsWith(matrix.platform, 'linux-')
-        uses: actions/cache@v5
-        with:
-          path: |
-            third_party/upstream/libkrunfw/tarballs
-            third_party/upstream/libkrunfw/kernel.c
-            third_party/upstream/libkrunfw/qboot.c
-            third_party/upstream/libkrunfw/initrd.c
-            third_party/upstream/libkrunfw/libkrunfw*.so*
-          key: release-libkrunfw-${{ matrix.platform }}
-
       - name: Install Linux build deps
         if: runner.os == 'Linux'
         run: |
@@ -126,10 +107,6 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install llvm lld xz zig
-
-      - name: Install macOS Intel HVF deps
-        if: matrix.platform == 'macos-x86_64'
-        run: brew install qemu
 
       - name: Build standalone binary
         run: |

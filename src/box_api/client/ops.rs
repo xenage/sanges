@@ -207,7 +207,7 @@ impl BoxApiClient {
                             .map_err(|error| SandboxError::io("flushing shell output", error))?;
                     }
                     BoxEvent::ShellExit { code, .. } => return Ok(code),
-                    BoxEvent::Error { message, .. } => return Err(SandboxError::backend(message)),
+                    BoxEvent::Error { message, .. } => return Err(super::remote_error(message)),
                     _ => {}
                 },
                 read = stdin_events.recv(), if !close_sent => {

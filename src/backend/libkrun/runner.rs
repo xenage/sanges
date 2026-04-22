@@ -3,23 +3,13 @@ use std::env;
 use std::fs;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::path::Path;
-#[cfg(target_os = "linux")]
-use std::sync::OnceLock;
 use std::sync::mpsc::SyncSender;
-
-#[cfg(target_os = "linux")]
-use libloading::Library;
 
 use super::RUNNER_STARTUP_FD_ENV;
 use super::config::{LibkrunRunnerConfig, read_runner_config};
 use super::loader::Libkrun;
-#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-use super::qemu_hvf;
 use crate::config::IsolationMode;
 use crate::{Result, SandboxError};
-
-#[cfg(target_os = "linux")]
-static RUNTIME_SUPPORT_PRELOAD: OnceLock<std::result::Result<(), String>> = OnceLock::new();
 
 pub fn run_from_file(path: &Path) -> Result<()> {
     let config = read_runner_config(path)?;
@@ -27,14 +17,7 @@ pub fn run_from_file(path: &Path) -> Result<()> {
     if config.isolation_mode == IsolationMode::Secure {
         apply_secure_bootstrap(&config)?;
     }
-    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    {
-        return qemu_hvf::run(config);
-    }
-    #[allow(unreachable_code)]
-    preload_runtime_support(&config.library_path)?;
-    let libkrun = Libkrun::load(&config.library_path)?;
-    let prepared = unsafe { libkrun.prepare_microvm(&config) }?;
+    let prepared = unsafe { Libkrun::new().prepare_microvm(&config) }?;
     prepared.start_enter()
 }
 
@@ -42,52 +25,10 @@ pub fn run_until_exit(
     _config: LibkrunRunnerConfig,
     started_tx: SyncSender<Result<Option<OwnedFd>>>,
 ) -> Result<()> {
-    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    {
-        let _ = started_tx;
-        return Err(SandboxError::UnsupportedHost(
-            "the macos-x86_64 HVF backend requires subprocess runner mode".into(),
-        ));
-    }
-    #[allow(unreachable_code)]
-    preload_runtime_support(&_config.library_path)?;
-    let libkrun = Libkrun::load(&_config.library_path)?;
-    let prepared = unsafe { libkrun.prepare_microvm(&_config) }?;
+    let prepared = unsafe { Libkrun::new().prepare_microvm(&_config) }?;
     let shutdown_fd = prepared.shutdown_fd().map(duplicate_fd).transpose()?;
     let _ = started_tx.send(Ok(shutdown_fd));
     prepared.start_enter()
-}
-
-#[cfg(target_os = "linux")]
-fn preload_runtime_support(library_path: &Path) -> Result<()> {
-    let status = RUNTIME_SUPPORT_PRELOAD.get_or_init(|| {
-        preload_runtime_support_once(library_path).map_err(|error| error.to_string())
-    });
-    match status {
-        Ok(()) => Ok(()),
-        Err(error) => Err(SandboxError::backend(error.clone())),
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-fn preload_runtime_support(_: &Path) -> Result<()> {
-    Ok(())
-}
-
-#[cfg(target_os = "linux")]
-fn preload_runtime_support_once(library_path: &Path) -> Result<()> {
-    let Some(bundle_dir) = library_path.parent() else {
-        return Ok(());
-    };
-    let libkrunfw = bundle_dir.join("libkrunfw.so.5");
-    if !libkrunfw.is_file() {
-        return Ok(());
-    }
-    let library = unsafe { Library::new(&libkrunfw) }.map_err(|error| {
-        SandboxError::backend(format!("loading libkrun runtime support: {error}"))
-    })?;
-    let _leaked: &'static mut Library = Box::leak(Box::new(library));
-    Ok(())
 }
 
 fn duplicate_fd(raw_fd: RawFd) -> Result<OwnedFd> {

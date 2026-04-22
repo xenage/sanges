@@ -8,7 +8,6 @@ use crate::{Result, SandboxError};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LibkrunRunnerConfig {
-    pub library_path: PathBuf,
     pub kernel_image: PathBuf,
     pub kernel_format: GuestKernelFormat,
     pub rootfs_image: PathBuf,
@@ -51,7 +50,8 @@ impl LibkrunRunnerConfig {
         #[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]
         let rpc_transport = "";
         format!(
-            "console=hvc0 root=/dev/vda ro rootfstype=ext4 rootwait loglevel=8 ignore_loglevel sandbox.workspace_device=/dev/vdb sandbox.tmpfs_mib={} sandbox.uid={} sandbox.gid={} sandbox.max_processes={} sandbox.max_open_files={} sandbox.max_file_size_bytes={} sandbox.rpc_port={} sandbox.network_enabled={}{} panic=-1",
+            "console=hvc0 root={} ro rootfstype=ext4 rootwait loglevel=8 ignore_loglevel sandbox.workspace_device=/dev/vdb sandbox.tmpfs_mib={} sandbox.uid={} sandbox.gid={} sandbox.max_processes={} sandbox.max_open_files={} sandbox.max_file_size_bytes={} sandbox.rpc_port={} sandbox.network_enabled={}{} panic=-1",
+            self.root_device(),
             self.tmpfs_mib,
             self.guest_uid,
             self.guest_gid,
@@ -64,18 +64,17 @@ impl LibkrunRunnerConfig {
         )
     }
 
-    fn uses_krun_init(&self) -> bool {
+    pub fn uses_krun_init(&self) -> bool {
         cfg!(target_os = "linux") && self.firmware.is_none()
     }
 
-    pub fn boots_via_krun_init(&self) -> bool {
-        self.uses_krun_init()
+    pub fn root_device(&self) -> &'static str {
+        "/dev/vda"
     }
 }
 
 pub fn build_runner_config(request: &BackendLaunchRequest) -> LibkrunRunnerConfig {
     LibkrunRunnerConfig {
-        library_path: request.guest.libkrun_library.clone(),
         kernel_image: request.guest.kernel_image.clone(),
         kernel_format: request.guest.kernel_format,
         rootfs_image: request.guest.rootfs_image.clone(),
@@ -126,9 +125,8 @@ mod tests {
 
     fn runner_config() -> LibkrunRunnerConfig {
         LibkrunRunnerConfig {
-            library_path: PathBuf::from("/tmp/libkrun.so"),
             kernel_image: PathBuf::from("/tmp/vmlinuz-virt"),
-            kernel_format: GuestKernelFormat::ImageGz,
+            kernel_format: GuestKernelFormat::Raw,
             rootfs_image: PathBuf::from("/tmp/rootfs.raw"),
             workspace_image: PathBuf::from("/tmp/workspace.raw"),
             runtime_dir: PathBuf::from("/tmp/runtime"),
@@ -154,7 +152,7 @@ mod tests {
     fn linux_uses_krun_init_cmdline_without_firmware() {
         let config = runner_config();
         let cmdline = config.kernel_cmdline();
-        assert!(config.boots_via_krun_init());
+        assert!(config.uses_krun_init());
         assert!(cmdline.contains("init=/init.krun"));
         assert!(cmdline.contains("root=/dev/root"));
         assert!(cmdline.contains("rootfstype=virtiofs"));
@@ -167,8 +165,8 @@ mod tests {
         let mut config = runner_config();
         config.firmware = Some(PathBuf::from("/tmp/fw.fd"));
         let cmdline = config.kernel_cmdline();
-        assert!(!config.boots_via_krun_init());
-        assert!(cmdline.contains("root=/dev/vda"));
+        assert!(!config.uses_krun_init());
+        assert!(cmdline.contains(&format!("root={}", config.root_device())));
         assert!(!cmdline.contains("init=/init.krun"));
     }
 }

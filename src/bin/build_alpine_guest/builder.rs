@@ -11,7 +11,7 @@ use sequoia_openpgp::parse::Parse;
 use super::args::{Args, absolute_path, rootfs_tar_name};
 use super::image::build_ext4_image;
 use super::packages::{
-    download_packages, extract_kernel, gzip_kernel, load_indexes, rebuild_rootfs, resolve_packages,
+    download_packages, extract_kernel, load_indexes, rebuild_rootfs, resolve_packages,
     validate_guest_agent_binary,
 };
 use super::verify::{extract_member_from_tar_gz, verify_detached_signature, verify_sha256};
@@ -88,7 +88,6 @@ impl Builder {
             .context("linux-virt package missing from resolved package set")?;
         let kernel_path = output_dir.join("vmlinuz-virt");
         extract_kernel(&apk_dir, kernel_package, &kernel_path)?;
-        gzip_kernel(&kernel_path, &output_dir.join("vmlinuz-virt.pe.gz"))?;
         build_ext4_image(
             &rootfs_dir,
             &output_dir.join("rootfs.raw"),

@@ -1,11 +1,13 @@
 use std::path::Path;
 use std::sync::Arc;
+use std::{io::Seek, io::SeekFrom, io::Write};
 
 use crate::auth::{
     AdminCredential, AdminStore, BoxCredentialStore, UserConfig, read_user_config,
     write_user_config,
 };
 use crate::boxes::{BoxManager, LocalBoxService};
+use crate::host_log;
 use crate::runtime::{AgentSandboxService, SandboxService};
 use crate::sagens::config::{
     SagensPaths, build_runtime_config_for_endpoint, validate_host_process_binary,
@@ -20,6 +22,15 @@ const DAEMON_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 pub async fn run_foreground(paths: &SagensPaths, host_binary: &Path) -> Result<()> {
     validate_host_process_binary(host_binary)?;
     let config = build_runtime_config_for_endpoint(&paths.state_dir, &paths.endpoint)?;
+    host_log::emit(
+        "daemon",
+        format!(
+            "starting endpoint={} isolation_mode={:?} state_dir={}",
+            config.control.bind_addr,
+            config.isolation_mode,
+            paths.state_dir.display()
+        ),
+    );
     let runtime: Arc<dyn SandboxService> =
         Arc::new(AgentSandboxService::new(config.clone()).await?);
     let service: Arc<dyn BoxManager> = Arc::new(
@@ -44,11 +55,22 @@ pub async fn run_foreground(paths: &SagensPaths, host_binary: &Path) -> Result<(
         config.isolation_mode,
     )
     .await?;
+    host_log::emit(
+        "daemon",
+        format!(
+            "listening endpoint=ws://{} isolation_mode={:?}",
+            handle.addr, config.isolation_mode
+        ),
+    );
     println!(
         "sagens daemon listening on ws://{} ({:?} isolation)",
         handle.addr, config.isolation_mode
     );
     let result = handle.wait().await;
+    match &result {
+        Ok(()) => host_log::emit("daemon", "shutdown complete"),
+        Err(error) => host_log::emit("daemon", format!("shutdown with error: {error}")),
+    }
     let _ = cleanup_pid_file(paths).await;
     result
 }
@@ -76,7 +98,7 @@ pub async fn ensure_started(paths: &SagensPaths, host_binary: &Path) -> Result<(
         .map_err(|error| SandboxError::io("creating daemon state directory", error))?;
     spawn_background_daemon(paths, host_binary, &user_config)
         .map_err(|error| SandboxError::io("spawning sagens daemon", error))?;
-    wait_for_daemon(&user_config).await?;
+    wait_for_daemon(&user_config, &paths.daemon_log_path).await?;
     Ok((user_config, false))
 }
 
@@ -85,7 +107,7 @@ fn spawn_background_daemon(
     host_binary: &Path,
     user_config: &UserConfig,
 ) -> std::io::Result<()> {
-    let stdout = std::fs::File::create(paths.state_dir.join("daemon.log"))?;
+    let stdout = std::fs::File::create(&paths.daemon_log_path)?;
     let stderr = stdout.try_clone()?;
     let mut command = std::process::Command::new(host_binary);
     command
@@ -115,6 +137,77 @@ fn spawn_background_daemon(
         }
     }
     command.spawn().map(|_| ())
+}
+
+pub async fn print_log(paths: &SagensPaths, tail: Option<usize>, follow: bool) -> Result<()> {
+    let path = &paths.daemon_log_path;
+    let mut stdout = std::io::stdout().lock();
+    writeln!(stdout, "==> {} <==", path.display())
+        .map_err(|error| SandboxError::io("writing daemon log header", error))?;
+
+    let initial = if follow {
+        read_log_or_wait(path).await?
+    } else {
+        std::fs::read(path).map_err(|error| match error.kind() {
+            std::io::ErrorKind::NotFound => SandboxError::not_found(format!(
+                "daemon log not found at {}; run `sagens start` first",
+                path.display()
+            )),
+            _ => SandboxError::io("reading daemon log", error),
+        })?
+    };
+    let initial_text = render_log_bytes(&initial, tail);
+    if !initial_text.is_empty() {
+        write!(stdout, "{initial_text}")
+            .map_err(|error| SandboxError::io("writing daemon log output", error))?;
+        if !initial_text.ends_with('\n') {
+            writeln!(stdout)
+                .map_err(|error| SandboxError::io("terminating daemon log output", error))?;
+        }
+    }
+    stdout
+        .flush()
+        .map_err(|error| SandboxError::io("flushing daemon log output", error))?;
+
+    if !follow {
+        return Ok(());
+    }
+
+    let mut offset = initial.len() as u64;
+    loop {
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        match std::fs::metadata(path) {
+            Ok(metadata) => {
+                if metadata.len() < offset {
+                    writeln!(stdout, "\n==> {} (restarted) <==", path.display()).map_err(
+                        |error| SandboxError::io("writing daemon log restart header", error),
+                    )?;
+                    offset = 0;
+                }
+                if metadata.len() == offset {
+                    continue;
+                }
+                let mut file = std::fs::File::open(path)
+                    .map_err(|error| SandboxError::io("opening daemon log for follow", error))?;
+                file.seek(SeekFrom::Start(offset))
+                    .map_err(|error| SandboxError::io("seeking daemon log", error))?;
+                let mut chunk = Vec::new();
+                std::io::Read::read_to_end(&mut file, &mut chunk)
+                    .map_err(|error| SandboxError::io("reading daemon log follow chunk", error))?;
+                offset += chunk.len() as u64;
+                if !chunk.is_empty() {
+                    write!(stdout, "{}", String::from_utf8_lossy(&chunk)).map_err(|error| {
+                        SandboxError::io("writing daemon log follow chunk", error)
+                    })?;
+                    stdout.flush().map_err(|error| {
+                        SandboxError::io("flushing daemon log follow chunk", error)
+                    })?;
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(SandboxError::io("reading daemon log metadata", error)),
+        }
+    }
 }
 
 pub async fn quit(paths: &SagensPaths) -> Result<bool> {
@@ -154,15 +247,16 @@ async fn ensure_user_config(paths: &SagensPaths) -> Result<UserConfig> {
     Ok(config)
 }
 
-async fn wait_for_daemon(config: &UserConfig) -> Result<()> {
+async fn wait_for_daemon(config: &UserConfig, daemon_log_path: &Path) -> Result<()> {
     let deadline = std::time::Instant::now() + DAEMON_WAIT_TIMEOUT;
     loop {
         match healthy_client(config).await {
             Ok(_) => return Ok(()),
             Err(error) if std::time::Instant::now() >= deadline => {
                 return Err(SandboxError::timeout(format!(
-                    "timed out waiting for daemon at {}: {error}",
-                    config.endpoint
+                    "timed out waiting for daemon at {}: {error}; inspect {} or run `sagens daemon log --tail 200`",
+                    config.endpoint,
+                    daemon_log_path.display()
                 )));
             }
             Err(_) => {
@@ -239,5 +333,38 @@ pub(super) async fn cleanup_pid_file(paths: &SagensPaths) -> Result<()> {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(SandboxError::io("removing daemon pid file", error)),
+    }
+}
+
+async fn read_log_or_wait(path: &Path) -> Result<Vec<u8>> {
+    loop {
+        match std::fs::read(path) {
+            Ok(bytes) => return Ok(bytes),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
+            Err(error) => return Err(SandboxError::io("reading daemon log", error)),
+        }
+    }
+}
+
+fn render_log_bytes(bytes: &[u8], tail: Option<usize>) -> String {
+    let text = String::from_utf8_lossy(bytes).into_owned();
+    match tail {
+        Some(lines) => {
+            let mut buffer = std::collections::VecDeque::with_capacity(lines);
+            for line in text.lines() {
+                if buffer.len() == lines {
+                    buffer.pop_front();
+                }
+                buffer.push_back(line.to_string());
+            }
+            let mut rendered = buffer.into_iter().collect::<Vec<_>>().join("\n");
+            if !rendered.is_empty() {
+                rendered.push('\n');
+            }
+            rendered
+        }
+        None => text,
     }
 }

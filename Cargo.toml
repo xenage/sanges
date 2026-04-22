@@ -1,7 +1,5 @@
 [workspace]
 members = [
-    "crates/sagens-box-api",
-    "crates/sagens-domain",
     "crates/sagens-guest-agent",
     "crates/sagens-guest-contract",
     "crates/sagens-host",
@@ -32,8 +30,6 @@ ext4-lwext4 = "0.1.2"
 flate2 = "1.1.9"
 futures-util = "0.3.32"
 libc = "0.2.185"
-libloading = "0.9.0"
-pyo3 = { version = "0.28.3", features = ["abi3-py311", "extension-module"] }
 reqwest = { version = "0.13.2", default-features = false, features = ["blocking", "rustls"] }
 sequoia-openpgp = { version = "2.2.0", default-features = false, features = ["compression", "crypto-rust", "allow-experimental-crypto", "allow-variable-time-crypto"] }
 serde = { version = "1.0.228", features = ["derive"] }
@@ -49,8 +45,5 @@ tokio-vsock = "0.7.2"
 uuid = { version = "1.23.1", features = ["serde", "v4"] }
 zstd = "0.13.3"
 
-sagens-box-api = { path = "crates/sagens-box-api" }
-sagens-domain = { path = "crates/sagens-domain" }
 sagens-guest-contract = { path = "crates/sagens-guest-contract" }
-sagens-host = { path = "crates/sagens-host" }
 sagens-libkrun = { path = "crates/sagens-libkrun" }

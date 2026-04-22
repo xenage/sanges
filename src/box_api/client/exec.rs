@@ -1,8 +1,8 @@
+use crate::Result;
 use crate::box_api::protocol::{BoxEvent, BoxRequest};
 use crate::protocol::{CompletedExecution, ExecExit, exit_code as structured_exit_code};
-use crate::{Result, SandboxError};
 
-use super::BoxApiClient;
+use super::{BoxApiClient, remote_error};
 
 impl BoxApiClient {
     pub(super) async fn collect_exec(&self, request: BoxRequest) -> Result<CompletedExecution> {
@@ -35,11 +35,11 @@ impl BoxApiClient {
                 BoxEvent::Error {
                     request_id: Some(id),
                     message,
-                } if id == request_id => return Err(SandboxError::backend(message)),
+                } if id == request_id => return Err(remote_error(message)),
                 BoxEvent::Error {
                     request_id: None,
                     message,
-                } => return Err(SandboxError::backend(message)),
+                } => return Err(remote_error(message)),
                 _ => {}
             }
         }

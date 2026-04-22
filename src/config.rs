@@ -66,7 +66,6 @@ impl RuntimeConfig {
 
 #[derive(Debug, Clone)]
 pub struct GuestConfig {
-    pub libkrun_library: PathBuf,
     pub kernel_image: PathBuf,
     pub kernel_format: GuestKernelFormat,
     pub rootfs_image: PathBuf,
@@ -82,33 +81,11 @@ pub struct GuestConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum GuestKernelFormat {
     Raw,
-    Elf,
-    PeGz,
-    ImageBz2,
-    ImageGz,
-    ImageZstd,
-}
-
-impl GuestKernelFormat {
-    pub fn parse(value: &str) -> Result<Self> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "raw" => Ok(Self::Raw),
-            "elf" => Ok(Self::Elf),
-            "pegz" | "pe_gz" | "pe-gz" => Ok(Self::PeGz),
-            "imagebz2" | "image_bz2" | "image-bz2" => Ok(Self::ImageBz2),
-            "imagegz" | "image_gz" | "image-gz" => Ok(Self::ImageGz),
-            "imagezstd" | "image_zstd" | "image-zstd" => Ok(Self::ImageZstd),
-            _ => Err(SandboxError::invalid(format!(
-                "unsupported guest kernel format: {value}"
-            ))),
-        }
-    }
 }
 
 impl GuestConfig {
     pub fn validate(&self) -> Result<()> {
         for (name, path) in [
-            ("libkrun_library", &self.libkrun_library),
             ("kernel_image", &self.kernel_image),
             ("rootfs_image", &self.rootfs_image),
             ("guest_agent_path", &self.guest_agent_path),

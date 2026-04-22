@@ -19,7 +19,8 @@ pub enum Command {
     Help(HelpTopic),
     Start,
     Quit,
-    Daemon,
+    Update,
+    Daemon(DaemonCommand),
     Admin(AdminCommand),
     Box(BoxCommand),
 }
@@ -29,7 +30,9 @@ pub enum HelpTopic {
     Root,
     Start,
     Quit,
+    Update,
     Daemon,
+    DaemonLog,
     Admin,
     AdminAdd,
     AdminRemoveMe,
@@ -57,6 +60,16 @@ pub enum HelpTopic {
 pub enum AdminCommand {
     Add,
     RemoveMe,
+}
+
+pub enum DaemonCommand {
+    Run,
+    Log(DaemonLogCommand),
+}
+
+pub struct DaemonLogCommand {
+    pub tail: Option<usize>,
+    pub follow: bool,
 }
 
 pub enum BoxCommand {

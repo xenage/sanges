@@ -17,6 +17,7 @@ pub struct SagensPaths {
     pub user_config_path: PathBuf,
     pub endpoint: String,
     pub pid_path: PathBuf,
+    pub daemon_log_path: PathBuf,
 }
 
 pub fn resolve_paths() -> SagensPaths {
@@ -28,11 +29,13 @@ pub fn resolve_paths() -> SagensPaths {
         .unwrap_or_else(default_user_config_path);
     let endpoint = env::var("SAGENS_ENDPOINT").unwrap_or_else(|_| default_endpoint());
     let pid_path = state_dir.join("daemon.pid");
+    let daemon_log_path = state_dir.join("daemon.log");
     SagensPaths {
         state_dir,
         user_config_path,
         endpoint,
         pid_path,
+        daemon_log_path,
     }
 }
 
@@ -44,9 +47,8 @@ pub fn build_runtime_config_for_endpoint(
     Ok(RuntimeConfig {
         state_dir: state_dir.to_path_buf(),
         guest: GuestConfig {
-            libkrun_library: default_guest_path("libkrun", prefer_embedded_assets),
             kernel_image: default_guest_path("kernel", prefer_embedded_assets),
-            kernel_format: parse_kernel_format().unwrap_or_else(|_| default_kernel_format()),
+            kernel_format: GuestKernelFormat::Raw,
             rootfs_image: default_guest_path("rootfs", prefer_embedded_assets),
             firmware: default_firmware_path(prefer_embedded_assets),
             guest_agent_path: PathBuf::from("/usr/local/bin/sagens-guest-agent"),
@@ -164,21 +166,6 @@ fn optional_path(candidates: &[PathBuf]) -> Option<PathBuf> {
     first_existing_path(candidates)
 }
 
-fn parse_kernel_format() -> Result<GuestKernelFormat> {
-    match env::var("SAGENS_KERNEL_FORMAT") {
-        Ok(value) if !value.is_empty() => GuestKernelFormat::parse(&value),
-        _ => Ok(default_kernel_format()),
-    }
-}
-
-fn default_kernel_format() -> GuestKernelFormat {
-    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        GuestKernelFormat::PeGz
-    } else {
-        GuestKernelFormat::Raw
-    }
-}
-
 fn parse_isolation_mode() -> Result<IsolationMode> {
     match env::var("SAGENS_ISOLATION_MODE") {
         Ok(value) if !value.trim().is_empty() => match value.trim().to_ascii_lowercase().as_str() {
@@ -195,28 +182,11 @@ fn parse_isolation_mode() -> Result<IsolationMode> {
 fn default_project_artifact_candidates(kind: &str) -> Vec<PathBuf> {
     let root = workspace_root();
     match (kind, env::consts::OS, env::consts::ARCH) {
-        ("libkrun", "macos", "x86_64") => {
-            vec![root.join("third_party/runtime/macos-x86_64/lib/libkrun.dylib")]
-        }
-        ("libkrun", "macos", "aarch64") => {
-            vec![root.join("third_party/runtime/macos-aarch64/lib/libkrun.dylib")]
-        }
-        ("libkrun", "linux", "aarch64") => {
-            vec![root.join("third_party/runtime/linux-aarch64/lib/libkrun.so")]
-        }
-        ("libkrun", "linux", "x86_64") => {
-            vec![root.join("third_party/runtime/linux-x86_64/lib/libkrun.so")]
-        }
-        ("firmware", "macos", "x86_64") => {
-            vec![root.join("third_party/runtime/macos-x86_64/share/krunkit/KRUN_EFI.silent.fd")]
-        }
-        ("firmware", "macos", "aarch64") => {
-            vec![root.join("third_party/runtime/macos-aarch64/share/krunkit/KRUN_EFI.silent.fd")]
+        ("firmware", "macos", "x86_64") | ("firmware", "macos", "aarch64") => {
+            vec![root.join("third_party/upstream/libkrun/edk2/KRUN_EFI.silent.fd")]
         }
         ("kernel", "macos", "x86_64") => vec![root.join("artifacts/alpine-x86_64/vmlinuz-virt")],
-        ("kernel", "macos", "aarch64") => {
-            vec![root.join("artifacts/alpine-aarch64/vmlinuz-virt.pe.gz")]
-        }
+        ("kernel", "macos", "aarch64") => vec![root.join("artifacts/alpine-aarch64/vmlinuz-virt")],
         ("kernel", "linux", "aarch64") => vec![root.join("artifacts/alpine-aarch64/vmlinuz-virt")],
         ("kernel", "linux", "x86_64") => vec![root.join("artifacts/alpine-x86_64/vmlinuz-virt")],
         ("rootfs", "macos", "x86_64") | ("rootfs", "linux", "x86_64") => {

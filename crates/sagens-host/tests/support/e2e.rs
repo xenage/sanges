@@ -69,8 +69,7 @@ pub fn configure_libkrun_test_helper() {
     let host_binary = host_binary();
     ensure_host_binary_ready(&host_binary);
     unsafe {
-        std::env::set_var("SAGENS_LIBKRUN_RUNNER", "self-subprocess");
-        std::env::set_var("SAGENS_LIBKRUN_RUNNER_EXE", &host_binary);
+        std::env::set_var("SAGENS_HOST_BINARY", &host_binary);
     }
 }
 

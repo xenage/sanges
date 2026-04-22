@@ -1,12 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{self, File};
+use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::path::PathBuf;
 
 use anyhow::{Context, bail, ensure};
-use flate2::Compression;
-use flate2::write::GzEncoder;
 use reqwest::blocking::Client;
 
 use super::image::unpack_with_tar;
@@ -206,16 +204,6 @@ pub(super) fn extract_kernel(
 ) -> anyhow::Result<()> {
     let archive_path = apk_dir.join(format!("{}-{}.apk", package.name, package.version));
     extract_member_from_tar_gz(&archive_path, "boot/vmlinuz-virt", destination)
-}
-
-pub(super) fn gzip_kernel(source: &Path, destination: &Path) -> anyhow::Result<()> {
-    let mut input = File::open(source).with_context(|| format!("opening {}", source.display()))?;
-    let output =
-        File::create(destination).with_context(|| format!("creating {}", destination.display()))?;
-    let mut encoder = GzEncoder::new(output, Compression::best());
-    std::io::copy(&mut input, &mut encoder).context("compressing kernel")?;
-    encoder.finish().context("finalizing kernel gzip stream")?;
-    Ok(())
 }
 
 fn first_field<'a>(fields: &'a BTreeMap<String, Vec<String>>, key: &str) -> Option<&'a str> {

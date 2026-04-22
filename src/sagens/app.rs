@@ -1,11 +1,12 @@
 use crate::auth::read_user_config;
 use crate::backend::libkrun::runner;
 use crate::sagens::args::{
-    AdminCommand, BoxCommand, BoxSetCommand, CheckpointCommand, Command, ExecTarget, FsCommand,
+    AdminCommand, BoxCommand, BoxSetCommand, CheckpointCommand, Command, DaemonCommand, ExecTarget,
+    FsCommand,
 };
 use crate::sagens::client::{SagensClient, download_path, upload_path};
 use crate::sagens::config::{build_runtime_config_for_endpoint, resolve_paths};
-use crate::sagens::{args, daemon, output};
+use crate::sagens::{args, daemon, output, update};
 use crate::{Result, SandboxError};
 
 pub async fn run() -> Result<i32> {
@@ -42,12 +43,24 @@ pub async fn run() -> Result<i32> {
                 .map_err(|error| SandboxError::io("writing quit output", error))?;
             Ok(0)
         }
-        Command::Daemon => {
-            let host_binary = std::env::current_exe()
-                .map_err(|error| SandboxError::io("discovering sagens binary", error))?;
-            daemon::run_foreground(&paths, &host_binary).await?;
+        Command::Update => {
+            let outcome = update::run_self_update().await?;
+            output::print_update_message(&outcome)
+                .map_err(|error| SandboxError::io("writing update output", error))?;
             Ok(0)
         }
+        Command::Daemon(command) => match command {
+            DaemonCommand::Run => {
+                let host_binary = std::env::current_exe()
+                    .map_err(|error| SandboxError::io("discovering sagens binary", error))?;
+                daemon::run_foreground(&paths, &host_binary).await?;
+                Ok(0)
+            }
+            DaemonCommand::Log(command) => {
+                daemon::print_log(&paths, command.tail, command.follow).await?;
+                Ok(0)
+            }
+        },
         Command::Admin(command) => run_admin_command(&paths.user_config_path, command).await,
         Command::Box(command) => run_box_command(&paths.user_config_path, command).await,
     }

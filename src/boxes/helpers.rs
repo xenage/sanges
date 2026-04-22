@@ -2,6 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use uuid::Uuid;
 
+use crate::host_log;
 use crate::{Result, SandboxError};
 
 use super::service::{BoxManager, LocalBoxService};
@@ -17,6 +18,14 @@ impl LocalBoxService {
                 record.status = BoxStatus::Failed;
                 record.last_error =
                     Some("daemon restarted while BOX was marked running; start it again".into());
+                host_log::emit(
+                    "box",
+                    format!(
+                        "marked failed after daemon restart box_id={} error={}",
+                        record.box_id,
+                        record.last_error.as_deref().unwrap_or("unknown")
+                    ),
+                );
                 self.boxes.write(&record).await?;
             }
         }
@@ -104,6 +113,17 @@ impl LocalBoxService {
     }
 
     pub(super) async fn set_failed(&self, mut record: BoxRecord, message: String) -> Result<()> {
+        host_log::emit(
+            "box",
+            format!(
+                "marked failed box_id={} sandbox_id={} error={message}",
+                record.box_id,
+                record
+                    .active_sandbox_id
+                    .map(|sandbox_id| sandbox_id.to_string())
+                    .unwrap_or_else(|| "none".into())
+            ),
+        );
         record.status = BoxStatus::Failed;
         record.active_sandbox_id = None;
         record.last_error = Some(message);

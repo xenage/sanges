@@ -10,6 +10,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::config::{IsolationMode, SandboxPolicy};
+use crate::host_log;
 use crate::protocol::{CommandStream, ExecRequest, ShellRequest};
 use crate::runtime::SandboxService;
 use crate::workspace::{
@@ -167,6 +168,7 @@ impl BoxManager for LocalBoxService {
                 "BOX {box_id} is already running"
             )));
         }
+        host_log::emit("box", format!("start requested box_id={box_id}"));
         match self
             .runtime
             .create_sandbox(crate::config::SandboxSpec {
@@ -182,10 +184,18 @@ impl BoxManager for LocalBoxService {
                 record.active_sandbox_id = Some(session.sandbox_id);
                 record.last_start_at_ms = Some(now_ms());
                 record.last_error = None;
+                host_log::emit(
+                    "box",
+                    format!(
+                        "start succeeded box_id={} sandbox_id={}",
+                        record.box_id, session.sandbox_id
+                    ),
+                );
                 self.boxes.write(&record).await?;
                 self.attach_runtime_usage(record).await
             }
             Err(error) => {
+                host_log::emit("box", format!("start failed box_id={box_id} error={error}"));
                 self.set_failed(record, error.to_string()).await?;
                 Err(error)
             }
@@ -199,6 +209,7 @@ impl BoxManager for LocalBoxService {
                 "BOX {box_id} is not running"
             )));
         }
+        host_log::emit("box", format!("stop requested box_id={box_id}"));
         let sandbox_id = self.running_sandbox_id(box_id).await?;
         match self.runtime.destroy_sandbox(sandbox_id).await {
             Ok(_) => {
@@ -207,10 +218,24 @@ impl BoxManager for LocalBoxService {
                 record.active_sandbox_id = None;
                 record.last_stop_at_ms = Some(now_ms());
                 record.last_error = None;
+                host_log::emit(
+                    "box",
+                    format!(
+                        "stop succeeded box_id={} sandbox_id={sandbox_id}",
+                        record.box_id
+                    ),
+                );
                 self.boxes.write(&record).await?;
                 Ok(record)
             }
             Err(error) => {
+                host_log::emit(
+                    "box",
+                    format!(
+                        "stop failed box_id={} sandbox_id={} error={error}",
+                        record.box_id, sandbox_id
+                    ),
+                );
                 self.set_failed(record, error.to_string()).await?;
                 Err(error)
             }
