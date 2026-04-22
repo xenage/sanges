@@ -14,7 +14,7 @@ const PREBUILT_X86_64_ARCHIVE: &str = "libkrunfw-x86_64.tgz";
 const PREBUILT_X86_64_URL: &str =
     "https://github.com/containers/libkrunfw/releases/download/v5.2.0/libkrunfw-x86_64.tgz";
 const KERNEL_C_PATH: &str = "libkrunfw/kernel.c";
-const X86_64_LIBRARY_PATH: &str = "lib64/libkrunfw.so";
+const X86_64_LIBRARY_PATH: &str = "lib64/libkrunfw.so.5.2.0";
 const KERNEL_BUNDLE_SYMBOL: &str = "KERNEL_BUNDLE";
 const KERNEL_OUTPUT: &str = "vmlinuz-virt";
 
