@@ -176,6 +176,15 @@ enum SigningSettings {
 impl SigningSettings {
     fn from_env(root: &Path) -> anyhow::Result<Self> {
         let env = DeveloperIdSettings::read_env();
+        let force_sign = env_truthy(FORCE_SIGN_ENV);
+        if force_sign {
+            ensure!(
+                !env.is_empty(),
+                "Developer ID signing was requested, but signing secrets are missing"
+            );
+            env.validate()?;
+            return Ok(Self::DeveloperId(env));
+        }
         if env.is_empty() || !release_signing_allowed(root) {
             return Ok(Self::AdHoc);
         }
