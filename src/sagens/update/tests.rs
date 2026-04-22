@@ -13,9 +13,12 @@ fn parses_supported_platforms() {
         platform_from_parts("linux", "arm64").expect("platform"),
         TargetPlatform::LinuxAarch64
     );
-    assert_eq!(
-        platform_from_parts("macos", "x86_64").expect("platform"),
-        TargetPlatform::MacosX86_64
+    let error = platform_from_parts("macos", "x86_64").expect_err("unsupported intel mac");
+    assert!(
+        error
+            .to_string()
+            .contains("self-update is not supported on macOS x86_64"),
+        "unexpected error: {error}"
     );
     assert_eq!(
         platform_from_parts("darwin", "arm64").expect("platform"),

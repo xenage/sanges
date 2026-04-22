@@ -43,7 +43,8 @@ host_platform() {
       printf 'macos-aarch64\n'
       ;;
     Darwin:x86_64)
-      printf 'macos-x86_64\n'
+      printf 'macOS x86_64 host builds are not supported by the libkrun-only backend\n' >&2
+      return 1
       ;;
     Linux:aarch64 | Linux:arm64)
       printf 'linux-aarch64\n'

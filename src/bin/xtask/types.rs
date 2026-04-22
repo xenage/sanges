@@ -63,6 +63,9 @@ impl Platform {
             "linux" => PlatformOs::Linux,
             other => bail!("unsupported host operating system: {other}"),
         };
+        if matches!((os, env::consts::ARCH), (PlatformOs::Macos, "x86_64")) {
+            bail!("macOS x86_64 host builds are not supported by the libkrun-only backend");
+        }
         let arch = match env::consts::ARCH {
             "aarch64" => PlatformArch::Aarch64,
             "x86_64" => PlatformArch::X86_64,

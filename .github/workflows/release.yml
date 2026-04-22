@@ -54,8 +54,6 @@ jobs:
             platform: linux-x86_64
           - os: ubuntu-24.04-arm
             platform: linux-aarch64
-          - os: macos-15-intel
-            platform: macos-x86_64
           - os: macos-14
             platform: macos-aarch64
     env:
@@ -156,8 +154,6 @@ jobs:
             platform: linux-x86_64
           - os: ubuntu-24.04-arm
             platform: linux-aarch64
-          - os: macos-15-intel
-            platform: macos-x86_64
           - os: macos-14
             platform: macos-aarch64
     env:
@@ -246,14 +242,14 @@ jobs:
           pattern: bundle-*
           merge-multiple: true
 
-      - name: Remove obsolete macOS raw assets
+      - name: Remove obsolete macOS release assets
         if: steps.verify.outputs.should_release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           asset_ids="$(
             gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
-              --jq '.assets[]? | select(.name | test("sagens-.*-macos-(x86_64|aarch64)(\\.sha256)?$")) | .id' \
+              --jq '.assets[]? | select(.name | test("sagens-.*-macos-x86_64(\\.zip(\\.sha256)?|\\.sha256)?$|sagens-.*-macos-aarch64(\\.sha256)?$")) | .id' \
               2>/dev/null || true
           )"
           if [[ -z "$asset_ids" ]]; then
@@ -275,7 +271,5 @@ jobs:
             release-assets/sagens-*-linux-x86_64.sha256
             release-assets/sagens-*-linux-aarch64
             release-assets/sagens-*-linux-aarch64.sha256
-            release-assets/sagens-*-macos-x86_64.zip
-            release-assets/sagens-*-macos-x86_64.zip.sha256
             release-assets/sagens-*-macos-aarch64.zip
             release-assets/sagens-*-macos-aarch64.zip.sha256

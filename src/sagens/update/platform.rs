@@ -4,7 +4,6 @@ use crate::{Result, SandboxError};
 pub(super) enum TargetPlatform {
     LinuxX86_64,
     LinuxAarch64,
-    MacosX86_64,
     MacosAarch64,
 }
 
@@ -17,7 +16,6 @@ impl TargetPlatform {
         match self {
             Self::LinuxX86_64 => "linux-x86_64",
             Self::LinuxAarch64 => "linux-aarch64",
-            Self::MacosX86_64 => "macos-x86_64",
             Self::MacosAarch64 => "macos-aarch64",
         }
     }
@@ -27,7 +25,9 @@ pub(super) fn platform_from_parts(os: &str, arch: &str) -> Result<TargetPlatform
     match (os, arch) {
         ("linux", "x86_64") | ("linux", "amd64") => Ok(TargetPlatform::LinuxX86_64),
         ("linux", "aarch64") | ("linux", "arm64") => Ok(TargetPlatform::LinuxAarch64),
-        ("macos", "x86_64") | ("darwin", "x86_64") => Ok(TargetPlatform::MacosX86_64),
+        ("macos", "x86_64") | ("darwin", "x86_64") => Err(SandboxError::invalid(
+            "self-update is not supported on macOS x86_64 because Intel Mac builds are no longer published",
+        )),
         ("macos", "aarch64") | ("macos", "arm64") | ("darwin", "aarch64") | ("darwin", "arm64") => {
             Ok(TargetPlatform::MacosAarch64)
         }
