@@ -1,5 +1,13 @@
 pub const BACKEND_NAME: &str = "libkrun";
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[used]
+static FORCE_STATIC_KRUNFW_LINK: unsafe extern "C" fn(
+    *mut u64,
+    *mut u64,
+    *mut usize,
+) -> *mut core::ffi::c_char = sagens_libkrunfw::krunfw_get_kernel;
+
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub use upstream_libkrun::{
     krun_add_disk3, krun_add_vsock, krun_add_vsock_port2, krun_create_ctx,

@@ -102,22 +102,24 @@ impl Libkrun {
                 "krun_set_firmware",
             )?;
         }
-        let kernel_image = kernel_image_for_libkrun(config)?;
-        let kernel = to_cstring(&kernel_image)?;
-        let cmdline = CString::new(config.kernel_cmdline())
-            .map_err(|_| SandboxError::invalid("kernel command line contains NUL"))?;
-        call(
-            unsafe {
-                krun::krun_set_kernel(
-                    ctx,
-                    kernel.as_ptr().cast(),
-                    kernel_format(config.kernel_format),
-                    std::ptr::null(),
-                    cmdline.as_ptr().cast(),
-                )
-            },
-            "krun_set_kernel",
-        )?;
+        if !config.uses_krun_init() {
+            let kernel_image = kernel_image_for_libkrun(config)?;
+            let kernel = to_cstring(&kernel_image)?;
+            let cmdline = CString::new(config.kernel_cmdline())
+                .map_err(|_| SandboxError::invalid("kernel command line contains NUL"))?;
+            call(
+                unsafe {
+                    krun::krun_set_kernel(
+                        ctx,
+                        kernel.as_ptr().cast(),
+                        kernel_format(config.kernel_format),
+                        std::ptr::null(),
+                        cmdline.as_ptr().cast(),
+                    )
+                },
+                "krun_set_kernel",
+            )?;
+        }
         call(
             unsafe {
                 krun::krun_add_disk3(

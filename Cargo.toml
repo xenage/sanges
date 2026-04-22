@@ -4,6 +4,7 @@ members = [
     "crates/sagens-guest-contract",
     "crates/sagens-host",
     "crates/sagens-libkrun",
+    "crates/sagens-libkrunfw",
     "xtask",
 ]
 exclude = ["third_party/upstream/libkrun"]
