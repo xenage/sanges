@@ -47,9 +47,9 @@ fn patch_hvf_source(source: &str, bindings_path: &Path) -> String {
         "use std::sync::{Arc, LazyLock};\n",
         "use std::sync::Arc;\n",
     );
-    patched = replace_exact(
+    patched = replace_line_containing(
         patched,
-        "    FindSymbol(libloading::Error),\n",
+        "    FindSymbol(",
         "    FindSymbol(&'static str),\n",
     );
     patched = replace_exact(
@@ -57,15 +57,17 @@ fn patch_hvf_source(source: &str, bindings_path: &Path) -> String {
         "extern \"C\" {\n    pub fn mach_absolute_time() -> u64;\n}\n",
         "extern \"C\" {\n    pub fn mach_absolute_time() -> u64;\n    fn sagens_hvf_vm_config_get_el2_supported(el2_supported: *mut bool) -> hv_return_t;\n    fn sagens_hvf_vm_config_set_el2_enabled(config: hv_vm_config_t, el2_enabled: bool) -> hv_return_t;\n}\n\nconst HVF_SYMBOL_MISSING: hv_return_t = -1;\n",
     );
-    patched = replace_exact(
+    patched = replace_range(
         patched,
-        "pub fn check_nested_virt() -> Result<bool, Error> {\n    type GetEL2Supported =\n        libloading::Symbol<'static, unsafe extern \"C\" fn(*mut bool) -> hv_return_t>;\n\n    let get_el2_supported: Result<GetEL2Supported, libloading::Error> =\n        unsafe { HVF.get(b\"hv_vm_config_get_el2_supported\") };\n    if get_el2_supported.is_err() {\n        info!(\"cannot find hv_vm_config_get_el2_supported symbol\");\n        return Ok(false);\n    }\n\n    let mut el2_supported: bool = false;\n    let ret = unsafe { (get_el2_supported.unwrap())(&mut el2_supported) };\n    if ret != HV_SUCCESS {\n        error!(\"hv_vm_config_get_el2_supported failed: {ret:?}\");\n        return Err(Error::NestedCheck);\n    }\n\n    Ok(el2_supported)\n}\n\npub struct HvfVm {}\n\nstatic HVF: LazyLock<libloading::Library> = LazyLock::new(|| unsafe {\n    libloading::Library::new(\n        \"/System/Library/Frameworks/Hypervisor.framework/Versions/A/Hypervisor\",\n    )\n    .unwrap()\n});\n",
-        "pub fn check_nested_virt() -> Result<bool, Error> {\n    let mut el2_supported = false;\n    let ret = unsafe { sagens_hvf_vm_config_get_el2_supported(&mut el2_supported) };\n    if ret == HVF_SYMBOL_MISSING {\n        info!(\"cannot find hv_vm_config_get_el2_supported symbol\");\n        return Ok(false);\n    }\n    if ret != HV_SUCCESS {\n        error!(\"hv_vm_config_get_el2_supported failed: {ret:?}\");\n        return Err(Error::NestedCheck);\n    }\n\n    Ok(el2_supported)\n}\n\npub struct HvfVm {}\n",
+        "pub fn check_nested_virt() -> Result<bool, Error> {\n",
+        "impl HvfVm {\n",
+        "pub fn check_nested_virt() -> Result<bool, Error> {\n    let mut el2_supported = false;\n    let ret = unsafe { sagens_hvf_vm_config_get_el2_supported(&mut el2_supported) };\n    if ret == HVF_SYMBOL_MISSING {\n        info!(\"cannot find hv_vm_config_get_el2_supported symbol\");\n        return Ok(false);\n    }\n    if ret != HV_SUCCESS {\n        error!(\"hv_vm_config_get_el2_supported failed: {ret:?}\");\n        return Err(Error::NestedCheck);\n    }\n\n    Ok(el2_supported)\n}\n\npub struct HvfVm {}\n\n",
     );
-    patched = replace_exact(
+    patched = replace_range(
         patched,
-        "        if nested_enabled {\n            let set_el2_enabled: libloading::Symbol<\n                'static,\n                unsafe extern \"C\" fn(hv_vm_config_t, bool) -> hv_return_t,\n            > = unsafe {\n                HVF.get(b\"hv_vm_config_set_el2_enabled\")\n                    .map_err(Error::FindSymbol)?\n            };\n\n            let ret = unsafe { (set_el2_enabled)(config, true) };\n            if ret != HV_SUCCESS {\n                return Err(Error::EnableEL2);\n            }\n        }\n",
-        "        if nested_enabled {\n            let ret = unsafe { sagens_hvf_vm_config_set_el2_enabled(config, true) };\n            if ret == HVF_SYMBOL_MISSING {\n                return Err(Error::FindSymbol(\"hv_vm_config_set_el2_enabled\"));\n            }\n            if ret != HV_SUCCESS {\n                return Err(Error::EnableEL2);\n            }\n        }\n",
+        "        if nested_enabled {\n",
+        "        let ret = unsafe { hv_vm_create(config) };\n",
+        "        if nested_enabled {\n            let ret = unsafe { sagens_hvf_vm_config_set_el2_enabled(config, true) };\n            if ret == HVF_SYMBOL_MISSING {\n                return Err(Error::FindSymbol(\"hv_vm_config_set_el2_enabled\"));\n            }\n            if ret != HV_SUCCESS {\n                return Err(Error::EnableEL2);\n            }\n        }\n\n",
     );
 
     patched
@@ -101,4 +103,38 @@ fn replace_exact(source: String, from: &str, to: &str) -> String {
         panic!("failed to patch hvf source for snippet:\n{from}");
     }
     source.replacen(from, to, 1)
+}
+
+fn replace_line_containing(source: String, needle: &str, replacement: &str) -> String {
+    let needle_offset = source
+        .find(needle)
+        .unwrap_or_else(|| panic!("failed to find hvf line containing:\n{needle}"));
+    let line_start = source[..needle_offset].rfind('\n').map_or(0, |idx| idx + 1);
+    let line_end = source[needle_offset..]
+        .find('\n')
+        .map_or(source.len(), |idx| needle_offset + idx + 1);
+
+    format!(
+        "{}{}{}",
+        &source[..line_start],
+        replacement,
+        &source[line_end..]
+    )
+}
+
+fn replace_range(source: String, start: &str, end: &str, replacement: &str) -> String {
+    let start_idx = source
+        .find(start)
+        .unwrap_or_else(|| panic!("failed to find hvf patch start:\n{start}"));
+    let end_idx = source[start_idx..]
+        .find(end)
+        .map(|idx| start_idx + idx)
+        .unwrap_or_else(|| panic!("failed to find hvf patch end:\n{end}"));
+
+    format!(
+        "{}{}{}",
+        &source[..start_idx],
+        replacement,
+        &source[end_idx..]
+    )
 }
