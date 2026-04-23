@@ -250,17 +250,7 @@ jobs:
           tmpdir="$(mktemp -d)"
           (
             cd "$tmpdir"
-            python - <<'PY' > "$payload_json"
-from pathlib import Path
-import json
-import sagens._rust
-from sagens._binary import resolve_host_binary
-
-print(json.dumps({
-    "host_binary": str(Path(resolve_host_binary()).resolve()),
-    "rust_ext": str(Path(sagens._rust.__file__).resolve()),
-}))
-PY
+            python -c 'from pathlib import Path; import json, sagens._rust; from sagens._binary import resolve_host_binary; print(json.dumps({"host_binary": str(Path(resolve_host_binary()).resolve()), "rust_ext": str(Path(sagens._rust.__file__).resolve())}))' > "$payload_json"
           )
           host_binary="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["host_binary"])' "$payload_json")"
           rust_ext="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["rust_ext"])' "$payload_json")"
