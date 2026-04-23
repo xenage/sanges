@@ -9,7 +9,7 @@ build = "build.rs"
 crossbeam-channel = ">=0.5.15"
 log = "0.4.0"
 
-arch = { path = "../../third_party/upstream/libkrun/src/arch" }
+arch = { path = "../upstream-arch" }
 
 [build-dependencies]
 cc = "1.2"

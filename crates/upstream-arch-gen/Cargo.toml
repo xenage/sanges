@@ -1,0 +1,10 @@
+[package]
+name = "arch_gen"
+version = "0.1.0"
+authors = ["Amazon Firecracker team <firecracker-devel@amazon.com>"]
+edition = "2021"
+
+[dependencies]
+
+[lib]
+path = "../../third_party/upstream/libkrun/src/arch_gen/src/lib.rs"

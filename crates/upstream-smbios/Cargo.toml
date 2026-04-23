@@ -1,0 +1,10 @@
+[package]
+name = "smbios"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vm-memory = { version = "0.17", features = ["backend-mmap"] }
+
+[lib]
+path = "../../third_party/upstream/libkrun/src/smbios/src/lib.rs"
