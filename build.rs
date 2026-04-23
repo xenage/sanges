@@ -11,7 +11,7 @@ const EMBED_MANIFEST: &str = ".sagens-state/embed-manifest.json";
 #[derive(Debug, Deserialize)]
 struct EmbedManifest {
     libkrun: Option<PathBuf>,
-    kernel: PathBuf,
+    kernel: Option<PathBuf>,
     rootfs: PathBuf,
     firmware: Option<PathBuf>,
     #[serde(default)]
@@ -76,7 +76,11 @@ fn render_assets(manifest_path: &Path, workspace_root: &Path) -> String {
         manifest.libkrun.as_deref(),
         &out_dir,
     ));
-    body.push_str(&render_required_asset("KERNEL", &manifest.kernel, &out_dir));
+    body.push_str(&render_optional_asset(
+        "KERNEL",
+        manifest.kernel.as_deref(),
+        &out_dir,
+    ));
     body.push_str(&render_required_asset("ROOTFS", &manifest.rootfs, &out_dir));
     body.push_str(&render_optional_asset(
         "FIRMWARE",
@@ -118,32 +122,42 @@ fn discover_default_manifest(repo_root: &Path) -> Option<EmbedManifest> {
     let lib_dir = runtime_dir.join("lib");
     let libkrun = lib_dir.join(platform.2);
     let guest_dir = repo_root.join("artifacts").join(platform.1);
-    let kernel = match target_os.as_str() {
-        "macos" => guest_dir.join("vmlinuz-virt.pe.gz"),
-        "linux" => guest_dir.join("vmlinuz-virt"),
+    let kernel = match (target_os.as_str(), target_arch.as_str()) {
+        ("macos", "aarch64") => None,
+        ("macos", _) => Some(guest_dir.join("vmlinuz-virt.pe.gz")),
+        ("linux", _) => Some(guest_dir.join("vmlinuz-virt")),
         _ => return None,
     };
     let rootfs = guest_dir.join("rootfs.raw");
-    let firmware = match target_os.as_str() {
-        "macos" => Some(
+    let firmware = match (target_os.as_str(), target_arch.as_str()) {
+        ("macos", "aarch64") => None,
+        ("macos", _) => Some(
             runtime_dir
                 .join("share")
                 .join("krunkit")
                 .join("KRUN_EFI.silent.fd"),
         ),
-        "linux" => None,
+        ("linux", _) => None,
         _ => return None,
     };
 
-    for candidate in [&libkrun, &kernel, &rootfs] {
+    for candidate in [&libkrun, &rootfs] {
         println!("cargo:rerun-if-changed={}", candidate.display());
+    }
+    if let Some(path) = &kernel {
+        println!("cargo:rerun-if-changed={}", path.display());
     }
     if let Some(path) = &firmware {
         println!("cargo:rerun-if-changed={}", path.display());
     }
     println!("cargo:rerun-if-changed={}", lib_dir.display());
 
-    if !libkrun.is_file() || !kernel.is_file() || !rootfs.is_file() {
+    if !libkrun.is_file() || !rootfs.is_file() {
+        return None;
+    }
+    if let Some(path) = &kernel
+        && !path.is_file()
+    {
         return None;
     }
     if let Some(path) = &firmware

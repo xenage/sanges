@@ -37,6 +37,15 @@ fn rejects_reserved_guest_vsock_port() {
     assert!(config.validate().is_err());
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+#[test]
+fn macos_aarch64_allows_firmwareless_guest_when_kernel_is_embedded() {
+    let mut config = guest_config();
+    config.kernel_image = PathBuf::new();
+    config.firmware = None;
+    assert!(config.validate().is_ok());
+}
+
 fn guest_config() -> GuestConfig {
     GuestConfig {
         libkrun_library: PathBuf::from("/usr/lib/libkrun.so"),

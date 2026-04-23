@@ -75,8 +75,11 @@ pub(super) fn ensure_runtime_bundle(
         build_runtime_bundle_from_source(root, platform, &runtime_dir)?;
         RuntimeBundleSource::SourceBuild
     };
-    let firmware = match platform.os {
-        PlatformOs::Macos => {
+    let firmware = match platform {
+        Platform {
+            os: PlatformOs::Macos,
+            arch: PlatformArch::X86_64,
+        } => {
             let path = share_dir.join("KRUN_EFI.silent.fd");
             ensure!(
                 path.is_file(),
@@ -85,7 +88,7 @@ pub(super) fn ensure_runtime_bundle(
             );
             Some(path)
         }
-        PlatformOs::Linux => None,
+        _ => None,
     };
     ensure_platform_runtime_support(root, platform, &lib_dir)?;
     let runtime_support = collect_runtime_support(&lib_dir, &libkrun)?;
@@ -130,11 +133,13 @@ pub(super) fn resolve_artifacts(
 ) -> anyhow::Result<ResolvedArtifacts> {
     let kernel = guest_kernel_path(root, platform);
     let rootfs = guest_rootfs_path(root, platform);
-    ensure!(
-        kernel.is_file(),
-        "missing guest kernel: {}",
-        kernel.display()
-    );
+    if let Some(kernel) = &kernel {
+        ensure!(
+            kernel.is_file(),
+            "missing guest kernel: {}",
+            kernel.display()
+        );
+    }
     ensure!(
         rootfs.is_file(),
         "missing guest rootfs: {}",
@@ -161,13 +166,21 @@ pub(super) fn resolve_artifacts(
     })
 }
 
-pub(super) fn guest_kernel_path(root: &Path, platform: Platform) -> PathBuf {
-    let kernel_name = match platform.os {
-        PlatformOs::Macos if platform.arch == PlatformArch::X86_64 => "vmlinuz-virt",
-        PlatformOs::Macos => "vmlinuz-virt.pe.gz",
-        PlatformOs::Linux => "vmlinuz-virt",
-    };
-    guest_output_dir(root, platform).join(kernel_name)
+pub(super) fn guest_kernel_path(root: &Path, platform: Platform) -> Option<PathBuf> {
+    match platform {
+        Platform {
+            os: PlatformOs::Macos,
+            arch: PlatformArch::Aarch64,
+        } => None,
+        Platform {
+            os: PlatformOs::Macos,
+            arch: PlatformArch::X86_64,
+        } => Some(guest_output_dir(root, platform).join("vmlinuz-virt")),
+        Platform {
+            os: PlatformOs::Linux,
+            ..
+        } => Some(guest_output_dir(root, platform).join("vmlinuz-virt")),
+    }
 }
 
 pub(super) fn guest_rootfs_path(root: &Path, platform: Platform) -> PathBuf {
@@ -287,9 +300,25 @@ fn build_libkrun_from_source(
     // build-local.sh points Cargo at a shared temp target dir, but the upstream
     // Makefile expects artifacts under its local ./target tree.
     make.env_remove("CARGO_TARGET_DIR");
-    match platform.os {
-        PlatformOs::Macos => make.arg("EFI=1"),
-        PlatformOs::Linux => make.arg("BLK=1"),
+    match platform {
+        Platform {
+            os: PlatformOs::Macos,
+            arch: PlatformArch::Aarch64,
+        } => {
+            make.arg("BLK=1");
+        }
+        Platform {
+            os: PlatformOs::Macos,
+            arch: PlatformArch::X86_64,
+        } => {
+            make.arg("EFI=1");
+        }
+        Platform {
+            os: PlatformOs::Linux,
+            ..
+        } => {
+            make.arg("BLK=1");
+        }
     };
     if platform.os == PlatformOs::Macos {
         if let Some(arch) = upstream_libkrun_arch(platform) {

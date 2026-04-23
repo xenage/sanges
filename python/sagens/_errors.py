@@ -1,0 +1,2 @@
+class SagensError(RuntimeError):
+    pass

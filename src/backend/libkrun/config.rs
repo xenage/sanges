@@ -65,7 +65,9 @@ impl LibkrunRunnerConfig {
     }
 
     fn uses_krun_init(&self) -> bool {
-        cfg!(target_os = "linux") && self.firmware.is_none()
+        self.firmware.is_none()
+            && (cfg!(target_os = "linux")
+                || cfg!(all(target_os = "macos", target_arch = "aarch64")))
     }
 
     pub fn boots_via_krun_init(&self) -> bool {
@@ -170,5 +172,13 @@ mod tests {
         assert!(!config.boots_via_krun_init());
         assert!(cmdline.contains("root=/dev/vda"));
         assert!(!cmdline.contains("init=/init.krun"));
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    #[test]
+    fn macos_aarch64_uses_krun_init_without_firmware() {
+        let mut config = runner_config();
+        config.firmware = None;
+        assert!(config.boots_via_krun_init());
     }
 }

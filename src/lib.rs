@@ -14,6 +14,7 @@ pub mod boxes;
 #[doc(hidden)]
 pub mod bundle;
 pub mod config;
+pub mod daemon_api;
 #[doc(hidden)]
 pub mod embedding;
 pub mod error;
@@ -45,6 +46,10 @@ pub use boxes::{BoxRecord, BoxRuntimeUsage, BoxSettingValue, BoxSettings, BoxSta
 pub use config::{
     ArtifactBundle, ControlPlaneConfig, ExecutionPolicy, GuestConfig, GuestKernelFormat,
     HardeningConfig, IsolationMode, LifecycleConfig, RuntimeConfig, SandboxPolicy, WorkspaceConfig,
+};
+pub use daemon_api::{
+    ManagedDaemonOptions, ManagedDaemonPaths, ManagedDaemonStartInfo, quit_managed_daemon,
+    resolve_managed_daemon_paths, start_managed_daemon,
 };
 pub use embedding::{EmbeddedDaemonConfig, EmbeddedDaemonHandle, EmbeddedDaemonInfo};
 pub use error::{Result, SandboxError};

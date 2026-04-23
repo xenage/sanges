@@ -1,0 +1,26 @@
+[package]
+name = "sagens-python"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Python bindings and packaging for sagens."
+readme = "README.md"
+repository.workspace = true
+homepage.workspace = true
+publish.workspace = true
+
+[lib]
+name = "sagens_python"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+async-trait.workspace = true
+pyo3.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+sagens-host.workspace = true

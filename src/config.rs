@@ -109,7 +109,6 @@ impl GuestConfig {
     pub fn validate(&self) -> Result<()> {
         for (name, path) in [
             ("libkrun_library", &self.libkrun_library),
-            ("kernel_image", &self.kernel_image),
             ("rootfs_image", &self.rootfs_image),
             ("guest_agent_path", &self.guest_agent_path),
         ] {
@@ -117,7 +116,7 @@ impl GuestConfig {
                 return Err(SandboxError::invalid(format!("{name} must not be empty")));
             }
         }
-        if cfg!(target_os = "macos") && self.firmware.is_none() {
+        if cfg!(all(target_os = "macos", target_arch = "x86_64")) && self.firmware.is_none() {
             return Err(SandboxError::invalid(
                 "firmware must be configured for libkrun on macOS",
             ));

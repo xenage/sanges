@@ -165,6 +165,101 @@ jobs:
           binary="$GITHUB_WORKSPACE/dist/sagens-${ARTIFACT_VERSION}-${{ matrix.platform }}"
           bash scripts/e2e-standalone-smoke.sh "$binary"
 
+  test_smoke_python:
+    name: Smoke Python (${{ matrix.platform }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+          - os: ubuntu-24.04-arm
+            platform: linux-aarch64
+          - os: macos-15-intel
+            platform: macos-x86_64
+          - os: macos-14
+            platform: macos-aarch64
+    env:
+      BUILD_CACHE_ROOT: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
+      CARGO_TARGET_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/target
+      SAGENS_RUNTIME_BUNDLE_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/runtime
+      SAGENS_GUEST_OUTPUT_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/guest-output
+      SAGENS_GUEST_WORK_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/guest-work
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Restore build cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ env.CARGO_TARGET_DIR }}
+            ${{ env.SAGENS_GUEST_OUTPUT_DIR }}
+            ${{ env.SAGENS_GUEST_WORK_DIR }}
+          key: release-build-${{ matrix.platform }}
+
+      - name: Restore runtime bundle cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.SAGENS_RUNTIME_BUNDLE_DIR }}
+          key: release-runtime-${{ matrix.platform }}
+
+      - name: Restore libkrunfw build cache
+        if: startsWith(matrix.platform, 'linux-')
+        uses: actions/cache@v5
+        with:
+          path: |
+            third_party/upstream/libkrunfw/tarballs
+            third_party/upstream/libkrunfw/kernel.c
+            third_party/upstream/libkrunfw/qboot.c
+            third_party/upstream/libkrunfw/initrd.c
+            third_party/upstream/libkrunfw/libkrunfw*.so*
+          key: release-libkrunfw-${{ matrix.platform }}
+
+      - name: Install Linux build deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm-dev libclang-dev pkg-config patchelf libc6-dev libelf-dev libssl-dev libncurses-dev bison flex dwarves cpio xz-utils bc kmod python3-pyelftools
+
+      - name: Install macOS build deps
+        if: runner.os == 'macOS'
+        run: |
+          brew install llvm lld xz zig
+
+      - name: Install macOS Intel HVF deps
+        if: matrix.platform == 'macos-x86_64'
+        run: brew install qemu
+
+      - name: Install standalone Python package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install . pytest
+
+      - name: Run Python smoke tests
+        run: python -m pytest python/tests -q --ignore=python/tests/test_e2e.py
+
+      - name: Show sccache stats
+        if: always()
+        run: ${SCCACHE_PATH} --show-stats
+
   test_linux_full:
     name: Full Linux E2E (xenage-kvm)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -194,12 +289,91 @@ jobs:
           binary="$GITHUB_WORKSPACE/dist/sagens-${ARTIFACT_VERSION}-linux-x86_64"
           bash scripts/e2e-standalone.sh "$binary"
 
+  test_linux_full_python:
+    name: Full Python E2E (xenage-kvm)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: xenage-kvm
+    env:
+      BUILD_CACHE_ROOT: ${{ github.workspace }}/.build-cache/linux-x86_64
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
+      CARGO_TARGET_DIR: ${{ github.workspace }}/.build-cache/linux-x86_64/target
+      SAGENS_RUNTIME_BUNDLE_DIR: ${{ github.workspace }}/.build-cache/linux-x86_64/runtime
+      SAGENS_GUEST_OUTPUT_DIR: ${{ github.workspace }}/.build-cache/linux-x86_64/guest-output
+      SAGENS_GUEST_WORK_DIR: ${{ github.workspace }}/.build-cache/linux-x86_64/guest-work
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Restore build cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ env.CARGO_TARGET_DIR }}
+            ${{ env.SAGENS_GUEST_OUTPUT_DIR }}
+            ${{ env.SAGENS_GUEST_WORK_DIR }}
+          key: release-build-linux-x86_64
+
+      - name: Restore runtime bundle cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.SAGENS_RUNTIME_BUNDLE_DIR }}
+          key: release-runtime-linux-x86_64
+
+      - name: Restore libkrunfw build cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            third_party/upstream/libkrunfw/tarballs
+            third_party/upstream/libkrunfw/kernel.c
+            third_party/upstream/libkrunfw/qboot.c
+            third_party/upstream/libkrunfw/initrd.c
+            third_party/upstream/libkrunfw/libkrunfw*.so*
+          key: release-libkrunfw-linux-x86_64
+
+      - name: Install Linux build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm-dev libclang-dev pkg-config patchelf libc6-dev libelf-dev libssl-dev libncurses-dev bison flex dwarves cpio xz-utils bc kmod python3-pyelftools
+
+      - name: Verify KVM is available
+        run: |
+          test -c /dev/kvm
+          ls -l /dev/kvm
+
+      - name: Install standalone Python package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install . pytest
+
+      - name: Run full Python e2e
+        run: SAGENS_RUN_E2E=1 python -m pytest python/tests/test_e2e.py -q
+
+      - name: Show sccache stats
+        if: always()
+        run: ${SCCACHE_PATH} --show-stats
+
   release:
     name: Release
     if: startsWith(github.ref, 'refs/tags/')
     needs:
       - build
       - test_smoke
+      - test_smoke_python
     runs-on: ubuntu-24.04
     permissions:
       contents: write

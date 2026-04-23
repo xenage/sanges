@@ -90,6 +90,8 @@ fn spawn_background_daemon(
     let mut command = std::process::Command::new(host_binary);
     command
         .arg("daemon")
+        .env("SAGENS_STATE_DIR", &paths.state_dir)
+        .env("SAGENS_CONFIG", &paths.user_config_path)
         .env("SAGENS_ENDPOINT", &user_config.endpoint)
         .env(
             "SAGENS_BOOTSTRAP_ADMIN_UUID",

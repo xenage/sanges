@@ -6,6 +6,7 @@ members = [
     "crates/sagens-guest-contract",
     "crates/sagens-host",
     "crates/sagens-libkrun",
+    "python",
     "xtask",
 ]
 default-members = [

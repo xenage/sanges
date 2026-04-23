@@ -150,7 +150,7 @@ impl RuntimeBundleSource {
 #[derive(Debug, Serialize)]
 struct EmbedManifest {
     libkrun: Option<PathBuf>,
-    kernel: PathBuf,
+    kernel: Option<PathBuf>,
     rootfs: PathBuf,
     firmware: Option<PathBuf>,
     runtime_support: Vec<PathBuf>,
@@ -158,7 +158,7 @@ struct EmbedManifest {
 
 pub(super) struct ResolvedArtifacts {
     pub(super) libkrun: Option<PathBuf>,
-    pub(super) kernel: PathBuf,
+    pub(super) kernel: Option<PathBuf>,
     pub(super) rootfs: PathBuf,
     pub(super) firmware: Option<PathBuf>,
     pub(super) runtime_support: Vec<PathBuf>,

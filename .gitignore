@@ -17,6 +17,7 @@ target/
 
 # Build outputs and local bundles
 /dist/
+/python/dist-test/
 /artifacts/
 /bundles/
 /release-assets/
@@ -44,6 +45,10 @@ __pycache__/
 /python/src/sagens/*.so
 /python/src/sagens/*.dylib
 /python/src/sagens/*.pyd
+/python/sagens/*.so
+/python/sagens/*.dylib
+/python/sagens/*.pyd
+/python/sagens/_bin/sagens
 
 # Logs / temp files
 *.log
