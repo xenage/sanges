@@ -8,13 +8,44 @@ on:
     tags:
       - "*"
 
+concurrency:
+  group: build-and-release-${{ github.sha }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/tags/') }}
+
 permissions:
   contents: read
 
 jobs:
+  gate:
+    name: Gate
+    runs-on: ubuntu-24.04
+    outputs:
+      should_run: ${{ steps.gate.outputs.should_run }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - id: gate
+        name: Decide whether this workflow should run
+        run: |
+          should_run=true
+          if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            git fetch --force --tags origin
+            if git tag --points-at "${GITHUB_SHA}" | grep -q .; then
+              echo "Skipping main push workflow because ${GITHUB_SHA} is already tagged."
+              should_run=false
+            fi
+          fi
+          echo "should_run=${should_run}" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build (${{ matrix.platform }})
+    if: needs.gate.outputs.should_run == 'true'
+    needs: gate
     runs-on: ${{ matrix.os }}
+    environment: apple
     strategy:
       fail-fast: false
       matrix:
@@ -23,8 +54,6 @@ jobs:
             platform: linux-x86_64
           - os: ubuntu-24.04-arm
             platform: linux-aarch64
-          - os: macos-15-intel
-            platform: macos-x86_64
           - os: macos-14
             platform: macos-aarch64
     env:
@@ -43,7 +72,6 @@ jobs:
       BUILD_LOCAL_SIGN: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && '1' || '' }}
       SAGENS_SKIP_INSTALLER: "1"
       CARGO_TARGET_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/target
-      SAGENS_RUNTIME_BUNDLE_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/runtime
       SAGENS_GUEST_OUTPUT_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/guest-output
       SAGENS_GUEST_WORK_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/guest-work
     steps:
@@ -67,24 +95,6 @@ jobs:
             ${{ env.SAGENS_GUEST_WORK_DIR }}
           key: release-build-${{ matrix.platform }}
 
-      - name: Restore runtime bundle cache
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.SAGENS_RUNTIME_BUNDLE_DIR }}
-          key: release-runtime-${{ matrix.platform }}
-
-      - name: Restore libkrunfw build cache
-        if: startsWith(matrix.platform, 'linux-')
-        uses: actions/cache@v5
-        with:
-          path: |
-            third_party/upstream/libkrunfw/tarballs
-            third_party/upstream/libkrunfw/kernel.c
-            third_party/upstream/libkrunfw/qboot.c
-            third_party/upstream/libkrunfw/initrd.c
-            third_party/upstream/libkrunfw/libkrunfw*.so*
-          key: release-libkrunfw-${{ matrix.platform }}
-
       - name: Install Linux build deps
         if: runner.os == 'Linux'
         run: |
@@ -95,10 +105,6 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install llvm lld xz zig
-
-      - name: Install macOS Intel HVF deps
-        if: matrix.platform == 'macos-x86_64'
-        run: brew install qemu
 
       - name: Build standalone binary
         run: |
@@ -116,12 +122,15 @@ jobs:
         if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
         run: |
           binary="dist/sagens-${ARTIFACT_VERSION}-${{ matrix.platform }}"
+          archive="${binary}.zip"
           codesign -dv --verbose=4 "$binary" 2>&1 | tee /tmp/sagens-codesign.txt
-          if rg -q 'Signature=adhoc|TeamIdentifier=not set' /tmp/sagens-codesign.txt; then
+          if grep -Eq 'Signature=adhoc|TeamIdentifier=not set' /tmp/sagens-codesign.txt; then
             echo "macOS release artifact is not Developer ID signed" >&2
             exit 1
           fi
-          spctl --assess --type execute -vvv "$binary"
+          codesign --verify --verbose=2 --strict "$binary"
+          test -f "$archive"
+          test -f "${archive}.sha256"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
@@ -132,7 +141,10 @@ jobs:
 
   test_smoke:
     name: Smoke (${{ matrix.platform }})
-    needs: build
+    if: needs.gate.outputs.should_run == 'true'
+    needs:
+      - gate
+      - build
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -142,8 +154,6 @@ jobs:
             platform: linux-x86_64
           - os: ubuntu-24.04-arm
             platform: linux-aarch64
-          - os: macos-15-intel
-            platform: macos-x86_64
           - os: macos-14
             platform: macos-aarch64
     env:
@@ -167,7 +177,10 @@ jobs:
 
   test_smoke_python:
     name: Smoke Python (${{ matrix.platform }})
-    needs: build
+    if: needs.gate.outputs.should_run == 'true'
+    needs:
+      - gate
+      - build
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -177,8 +190,6 @@ jobs:
             platform: linux-x86_64
           - os: ubuntu-24.04-arm
             platform: linux-aarch64
-          - os: macos-15-intel
-            platform: macos-x86_64
           - os: macos-14
             platform: macos-aarch64
     env:
@@ -186,7 +197,6 @@ jobs:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: sccache
       CARGO_TARGET_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/target
-      SAGENS_RUNTIME_BUNDLE_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/runtime
       SAGENS_GUEST_OUTPUT_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/guest-output
       SAGENS_GUEST_WORK_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/guest-work
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
@@ -215,24 +225,6 @@ jobs:
             ${{ env.SAGENS_GUEST_WORK_DIR }}
           key: release-build-${{ matrix.platform }}
 
-      - name: Restore runtime bundle cache
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.SAGENS_RUNTIME_BUNDLE_DIR }}
-          key: release-runtime-${{ matrix.platform }}
-
-      - name: Restore libkrunfw build cache
-        if: startsWith(matrix.platform, 'linux-')
-        uses: actions/cache@v5
-        with:
-          path: |
-            third_party/upstream/libkrunfw/tarballs
-            third_party/upstream/libkrunfw/kernel.c
-            third_party/upstream/libkrunfw/qboot.c
-            third_party/upstream/libkrunfw/initrd.c
-            third_party/upstream/libkrunfw/libkrunfw*.so*
-          key: release-libkrunfw-${{ matrix.platform }}
-
       - name: Install Linux build deps
         if: runner.os == 'Linux'
         run: |
@@ -243,10 +235,6 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install llvm lld xz zig
-
-      - name: Install macOS Intel HVF deps
-        if: matrix.platform == 'macos-x86_64'
-        run: brew install qemu
 
       - name: Install standalone Python package
         run: |
@@ -262,8 +250,10 @@ jobs:
 
   test_linux_full:
     name: Full Linux E2E (xenage-kvm)
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build
+    if: needs.gate.outputs.should_run == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+    needs:
+      - gate
+      - build
     runs-on: xenage-kvm
     env:
       ARTIFACT_VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('ci-{0}', github.sha) }}
@@ -291,15 +281,16 @@ jobs:
 
   test_linux_full_python:
     name: Full Python E2E (xenage-kvm)
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build
+    if: needs.gate.outputs.should_run == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+    needs:
+      - gate
+      - build
     runs-on: xenage-kvm
     env:
       BUILD_CACHE_ROOT: ${{ github.workspace }}/.build-cache/linux-x86_64
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: sccache
       CARGO_TARGET_DIR: ${{ github.workspace }}/.build-cache/linux-x86_64/target
-      SAGENS_RUNTIME_BUNDLE_DIR: ${{ github.workspace }}/.build-cache/linux-x86_64/runtime
       SAGENS_GUEST_OUTPUT_DIR: ${{ github.workspace }}/.build-cache/linux-x86_64/guest-output
       SAGENS_GUEST_WORK_DIR: ${{ github.workspace }}/.build-cache/linux-x86_64/guest-work
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
@@ -328,23 +319,6 @@ jobs:
             ${{ env.SAGENS_GUEST_WORK_DIR }}
           key: release-build-linux-x86_64
 
-      - name: Restore runtime bundle cache
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.SAGENS_RUNTIME_BUNDLE_DIR }}
-          key: release-runtime-linux-x86_64
-
-      - name: Restore libkrunfw build cache
-        uses: actions/cache@v5
-        with:
-          path: |
-            third_party/upstream/libkrunfw/tarballs
-            third_party/upstream/libkrunfw/kernel.c
-            third_party/upstream/libkrunfw/qboot.c
-            third_party/upstream/libkrunfw/initrd.c
-            third_party/upstream/libkrunfw/libkrunfw*.so*
-          key: release-libkrunfw-linux-x86_64
-
       - name: Install Linux build deps
         run: |
           sudo apt-get update
@@ -369,11 +343,14 @@ jobs:
 
   release:
     name: Release
-    if: startsWith(github.ref, 'refs/tags/')
+    if: needs.gate.outputs.should_run == 'true' && startsWith(github.ref, 'refs/tags/')
     needs:
+      - gate
       - build
       - test_smoke
       - test_smoke_python
+      - test_linux_full
+      - test_linux_full_python
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -402,9 +379,34 @@ jobs:
           pattern: bundle-*
           merge-multiple: true
 
+      - name: Remove obsolete macOS release assets
+        if: steps.verify.outputs.should_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          asset_ids="$(
+            gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
+              --jq '.assets[]? | select(.name | test("sagens-.*-macos-x86_64(\\.zip(\\.sha256)?|\\.sha256)?$|sagens-.*-macos-aarch64(\\.sha256)?$")) | .id' \
+              2>/dev/null || true
+          )"
+          if [[ -z "$asset_ids" ]]; then
+            exit 0
+          fi
+          while IFS= read -r asset_id; do
+            [[ -n "$asset_id" ]] || continue
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}"
+          done <<< "$asset_ids"
+
       - name: Publish GitHub release
         if: steps.verify.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
-          files: release-assets/sagens-*
+          overwrite_files: true
+          files: |
+            release-assets/sagens-*-linux-x86_64
+            release-assets/sagens-*-linux-x86_64.sha256
+            release-assets/sagens-*-linux-aarch64
+            release-assets/sagens-*-linux-aarch64.sha256
+            release-assets/sagens-*-macos-aarch64.zip
+            release-assets/sagens-*-macos-aarch64.zip.sha256

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import sys
 import tempfile
 import zipfile
 from base64 import urlsafe_b64encode
@@ -67,7 +68,11 @@ def e2e_enabled() -> bool:
 
 
 def real_box_runtime_supported() -> bool:
-    return True
+    if os.environ.get("SAGENS_FORCE_REAL_BOX_E2E", "").lower() in {"1", "true", "yes"}:
+        return True
+    if sys.platform != "linux":
+        return False
+    return Path("/dev/kvm").exists()
 
 
 @contextmanager

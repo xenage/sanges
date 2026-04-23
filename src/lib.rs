@@ -25,6 +25,8 @@ pub mod guest_transport;
 #[doc(hidden)]
 pub mod host_hardening;
 #[doc(hidden)]
+pub mod host_log;
+#[doc(hidden)]
 pub mod protocol;
 #[doc(hidden)]
 pub mod runtime;

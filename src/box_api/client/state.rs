@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::box_api::protocol::{BoxEvent, BoxResponse, ClientMessage, Principal};
 use crate::{Result, SandboxError};
 
-use super::Writer;
+use super::{Writer, remote_error};
 
 type ResponseSender = oneshot::Sender<Result<BoxResponse>>;
 
@@ -51,7 +51,7 @@ impl ClientInner {
                 };
                 let mut state = self.state.lock().await;
                 if let Some(sender) = state.pending_responses.remove(&request_id) {
-                    let _ = sender.send(Err(SandboxError::backend(message)));
+                    let _ = sender.send(Err(remote_error(message)));
                     return;
                 }
                 if let Some(sender) = state.exec_streams.remove(&request_id) {
@@ -132,7 +132,7 @@ impl ClientInner {
             (responses, execs, shells)
         };
         for sender in responses {
-            let _ = sender.send(Err(SandboxError::backend(message.clone())));
+            let _ = sender.send(Err(remote_error(message.clone())));
         }
         for sender in execs {
             let _ = sender

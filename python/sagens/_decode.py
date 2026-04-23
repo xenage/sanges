@@ -161,6 +161,7 @@ def daemon_start_info_from_dict(raw: dict) -> ManagedDaemonStartInfo:
             user_config_path=Path(raw["paths"]["user_config_path"]),
             endpoint=raw["paths"]["endpoint"],
             pid_path=Path(raw["paths"]["pid_path"]),
+            daemon_log_path=Path(raw["paths"]["daemon_log_path"]),
         ),
         user_config=user_config_from_dict(raw["user_config"]),
         already_running=raw["already_running"],

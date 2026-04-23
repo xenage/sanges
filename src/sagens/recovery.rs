@@ -209,6 +209,7 @@ mod tests {
             user_config_path: temp.path().join("config.json"),
             endpoint: format!("ws://{occupied_addr}"),
             pid_path: temp.path().join("state/daemon.pid"),
+            daemon_log_path: temp.path().join("state/daemon.log"),
         };
         tokio::fs::create_dir_all(&paths.state_dir)
             .await

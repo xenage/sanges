@@ -17,6 +17,7 @@ pub struct ManagedDaemonPaths {
     pub user_config_path: PathBuf,
     pub endpoint: String,
     pub pid_path: PathBuf,
+    pub daemon_log_path: PathBuf,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -31,6 +32,7 @@ pub fn resolve_managed_daemon_paths(options: ManagedDaemonOptions) -> ManagedDae
     let state_dir = options.state_dir.unwrap_or(defaults.state_dir);
     ManagedDaemonPaths {
         pid_path: state_dir.join("daemon.pid"),
+        daemon_log_path: state_dir.join("daemon.log"),
         state_dir,
         user_config_path: options
             .user_config_path
@@ -68,5 +70,6 @@ fn into_internal_paths(paths: &ManagedDaemonPaths) -> SagensPaths {
         user_config_path: paths.user_config_path.clone(),
         endpoint: paths.endpoint.clone(),
         pid_path: paths.state_dir.join("daemon.pid"),
+        daemon_log_path: paths.daemon_log_path.clone(),
     }
 }

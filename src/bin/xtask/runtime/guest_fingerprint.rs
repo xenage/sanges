@@ -13,7 +13,7 @@ pub(crate) fn guest_artifacts_stale(root: &Path, platform: Platform) -> anyhow::
     let kernel = super::guest_kernel_path(root, platform);
     let rootfs = super::guest_rootfs_path(root, platform);
     let fingerprint_path = guest_artifact_fingerprint_path(root, platform);
-    if kernel.as_ref().is_some_and(|path| !path.is_file())
+    if !kernel.is_file()
         || !rootfs.is_file()
         || !fingerprint_path.is_file()
     {
@@ -61,6 +61,7 @@ fn guest_artifact_fingerprint_inputs() -> &'static [&'static str] {
         "Cargo.lock",
         "src/bin/build-alpine-guest.rs",
         "src/bin/build_alpine_guest",
+        "src/bin/xtask/runtime",
         "crates/sagens-guest-agent",
         "crates/sagens-guest-contract",
         "guest-agent",

@@ -40,15 +40,7 @@ jobs:
         run: python3 scripts/check_code_limits.py
 
       - name: Check formatting
-        run: |
-          cargo fmt --check \
-            -p sagens-box-api \
-            -p sagens-domain \
-            -p sagens-guest-agent \
-            -p sagens-guest-contract \
-            -p sagens-host \
-            -p sagens-libkrun \
-            -p xtask
+        run: python3 scripts/cargo_fmt_workspace.py --check
 
       - name: Run clippy
         run: cargo clippy --all-targets -- -D warnings

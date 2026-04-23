@@ -11,3 +11,12 @@ homepage.workspace = true
 publish.workspace = true
 
 [dependencies]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+upstream-libkrun = { package = "libkrun", path = "../upstream-libkrun", default-features = false, features = ["blk"] }
+
+[target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dependencies]
+sagens-libkrunfw = { path = "../sagens-libkrunfw" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+upstream-libkrun = { package = "libkrun", path = "../upstream-libkrun", default-features = false, features = ["efi"] }

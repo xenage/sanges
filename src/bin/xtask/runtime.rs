@@ -1,103 +1,29 @@
 #[path = "runtime/guest_fingerprint.rs"]
 mod guest_fingerprint;
-#[path = "runtime/libkrunfw.rs"]
-mod libkrunfw;
-#[path = "runtime/macos_hvf.rs"]
-mod macos_hvf;
-#[path = "runtime/source_build.rs"]
-mod source_build;
+#[path = "runtime/libkrunfw_kernel.rs"]
+mod libkrunfw_kernel;
 #[path = "runtime/submodules.rs"]
 mod submodules;
 
 use std::env;
-use std::ffi::OsStr;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::thread;
 
 use anyhow::{Context, ensure};
 
 use super::cargo_ops::{cargo_build, run};
 use super::types::{
     GUEST_AGENT_MANIFEST, Platform, PlatformArch, PlatformOs, Profile, ResolvedArtifacts,
-    RuntimeBundle, RuntimeBundleSource, absolutize, target_root,
+    absolutize, target_root,
 };
 pub(super) use guest_fingerprint::{guest_artifacts_stale, write_guest_artifact_fingerprint};
-use libkrunfw::{ensure_macos_aarch64_libkrunfw, maybe_build_libkrunfw_support};
-use macos_hvf::build_macos_x86_64_hvf_runtime;
-use source_build::{
-    macos_cc_linux_value, patch_libkrun_sources, prebuilt_runtime_bundle_ready,
-    preferred_host_clang, preferred_ld_lld, preferred_libclang_dir, prepend_env_path,
-    stage_libclang_runtime,
-};
 use submodules::ensure_upstream_checkout;
 
 const GUEST_OUTPUT_DIR_ENV: &str = "SAGENS_GUEST_OUTPUT_DIR";
 const GUEST_WORK_DIR_ENV: &str = "SAGENS_GUEST_WORK_DIR";
-const RUNTIME_BUNDLE_DIR_ENV: &str = "SAGENS_RUNTIME_BUNDLE_DIR";
 
 pub(super) fn maybe_init_submodules(root: &Path) -> anyhow::Result<()> {
     submodules::maybe_init_submodules(root)
-}
-
-pub(super) fn clean_runtime_dir(root: &Path, platform: Platform) -> anyhow::Result<()> {
-    let runtime_dir = runtime_bundle_dir(root, platform);
-    if runtime_dir.exists() {
-        fs::remove_dir_all(&runtime_dir)
-            .with_context(|| format!("removing {}", runtime_dir.display()))?;
-    }
-    Ok(())
-}
-
-pub(super) fn ensure_runtime_bundle(
-    root: &Path,
-    platform: Platform,
-) -> anyhow::Result<RuntimeBundle> {
-    let runtime_dir = runtime_bundle_dir(root, platform);
-    let lib_dir = runtime_dir.join("lib");
-    let share_dir = runtime_dir.join("share").join("krunkit");
-    let libkrun = lib_dir.join(platform.lib_name());
-    let source = if prebuilt_runtime_bundle_ready(&lib_dir, &libkrun, platform)? {
-        RuntimeBundleSource::Prebuilt
-    } else {
-        if runtime_dir.exists() {
-            fs::remove_dir_all(&runtime_dir)
-                .with_context(|| format!("removing {}", runtime_dir.display()))?;
-        }
-        fs::create_dir_all(&lib_dir).with_context(|| format!("creating {}", lib_dir.display()))?;
-        if platform.os == PlatformOs::Macos
-            || (platform.os == PlatformOs::Linux && platform.arch == PlatformArch::X86_64)
-        {
-            fs::create_dir_all(&share_dir)
-                .with_context(|| format!("creating {}", share_dir.display()))?;
-        }
-        build_runtime_bundle_from_source(root, platform, &runtime_dir)?;
-        RuntimeBundleSource::SourceBuild
-    };
-    let firmware = match platform {
-        Platform {
-            os: PlatformOs::Macos,
-            arch: PlatformArch::X86_64,
-        } => {
-            let path = share_dir.join("KRUN_EFI.silent.fd");
-            ensure!(
-                path.is_file(),
-                "missing runtime firmware: {}",
-                path.display()
-            );
-            Some(path)
-        }
-        _ => None,
-    };
-    ensure_platform_runtime_support(root, platform, &lib_dir)?;
-    let runtime_support = collect_runtime_support(&lib_dir, &libkrun)?;
-    Ok(RuntimeBundle {
-        libkrun,
-        firmware,
-        runtime_support,
-        source,
-    })
 }
 
 pub(super) fn build_guest_artifacts(
@@ -123,79 +49,62 @@ pub(super) fn build_guest_artifacts(
         .arg(&guest)
         .arg("--output-dir")
         .arg(&output_dir);
-    run(command, "building Alpine guest artifacts")
+    run(command, "building Alpine guest artifacts")?;
+    match (platform.os, platform.arch) {
+        (PlatformOs::Macos, PlatformArch::Aarch64) => {
+            libkrunfw_kernel::materialize_macos_aarch64_guest_kernel(&work_dir, &output_dir)?;
+        }
+        (PlatformOs::Linux, PlatformArch::X86_64) => {
+            libkrunfw_kernel::materialize_linux_x86_64_guest_kernel(&work_dir, &output_dir)?;
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 pub(super) fn resolve_artifacts(
     root: &Path,
     platform: Platform,
-    runtime: RuntimeBundle,
 ) -> anyhow::Result<ResolvedArtifacts> {
     let kernel = guest_kernel_path(root, platform);
     let rootfs = guest_rootfs_path(root, platform);
-    if let Some(kernel) = &kernel {
-        ensure!(
-            kernel.is_file(),
-            "missing guest kernel: {}",
-            kernel.display()
-        );
-    }
+    ensure!(
+        kernel.is_file(),
+        "missing guest kernel: {}",
+        kernel.display()
+    );
     ensure!(
         rootfs.is_file(),
         "missing guest rootfs: {}",
         rootfs.display()
     );
-    ensure!(
-        runtime.libkrun.is_file(),
-        "missing runtime library: {}",
-        runtime.libkrun.display()
-    );
-    if let Some(firmware) = &runtime.firmware {
-        ensure!(
-            firmware.is_file(),
-            "missing firmware: {}",
-            firmware.display()
-        );
-    }
     Ok(ResolvedArtifacts {
-        libkrun: Some(runtime.libkrun),
         kernel,
         rootfs,
-        firmware: runtime.firmware,
-        runtime_support: runtime.runtime_support,
+        firmware: resolve_firmware(root, platform)?,
     })
 }
 
-pub(super) fn guest_kernel_path(root: &Path, platform: Platform) -> Option<PathBuf> {
-    match platform {
-        Platform {
-            os: PlatformOs::Macos,
-            arch: PlatformArch::Aarch64,
-        } => None,
-        Platform {
-            os: PlatformOs::Macos,
-            arch: PlatformArch::X86_64,
-        } => Some(guest_output_dir(root, platform).join("vmlinuz-virt")),
-        Platform {
-            os: PlatformOs::Linux,
-            ..
-        } => Some(guest_output_dir(root, platform).join("vmlinuz-virt")),
-    }
+pub(super) fn guest_kernel_path(root: &Path, platform: Platform) -> PathBuf {
+    guest_output_dir(root, platform).join("vmlinuz-virt")
 }
 
 pub(super) fn guest_rootfs_path(root: &Path, platform: Platform) -> PathBuf {
     guest_output_dir(root, platform).join("rootfs.raw")
 }
 
-fn ensure_platform_runtime_support(
-    root: &Path,
-    platform: Platform,
-    lib_dir: &Path,
-) -> anyhow::Result<()> {
-    if platform.os == PlatformOs::Macos && platform.arch == PlatformArch::Aarch64 {
-        ensure_macos_aarch64_libkrunfw(root, lib_dir)?;
+fn resolve_firmware(root: &Path, platform: Platform) -> anyhow::Result<Option<PathBuf>> {
+    if platform.os != PlatformOs::Macos {
+        return Ok(None);
     }
-    Ok(())
+    let libkrun_root = ensure_upstream_checkout(root, "third_party/upstream/libkrun", "Makefile")?;
+    let firmware = libkrun_root.join("edk2").join("KRUN_EFI.silent.fd");
+    ensure!(
+        firmware.is_file(),
+        "missing libkrun firmware: {}",
+        firmware.display()
+    );
+    Ok(Some(firmware))
 }
 
 fn build_guest_agent(root: &Path, platform: Platform, profile: Profile) -> anyhow::Result<()> {
@@ -262,167 +171,4 @@ fn ensure_rust_target(target: &str) -> anyhow::Result<()> {
         anyhow::bail!("rustup target add {target} failed with status {status}");
     }
     Ok(())
-}
-
-fn runtime_bundle_dir(root: &Path, platform: Platform) -> PathBuf {
-    env::var_os(RUNTIME_BUNDLE_DIR_ENV)
-        .map(PathBuf::from)
-        .filter(|path| !path.as_os_str().is_empty())
-        .map(|path| absolutize(root, &path))
-        .unwrap_or_else(|| {
-            root.join("third_party")
-                .join("runtime")
-                .join(platform.as_str())
-        })
-}
-
-fn build_runtime_bundle_from_source(
-    root: &Path,
-    platform: Platform,
-    runtime_dir: &Path,
-) -> anyhow::Result<()> {
-    if platform.os == PlatformOs::Macos && platform.arch == PlatformArch::X86_64 {
-        return build_macos_x86_64_hvf_runtime(root, runtime_dir);
-    }
-    build_libkrun_from_source(root, platform, runtime_dir)
-}
-
-fn build_libkrun_from_source(
-    root: &Path,
-    platform: Platform,
-    runtime_dir: &Path,
-) -> anyhow::Result<()> {
-    let libkrun_root = ensure_upstream_checkout(root, "third_party/upstream/libkrun", "Makefile")?;
-    let _source_patches = patch_libkrun_sources(&libkrun_root, platform)?;
-    let mut make = crate::cmd::tool_command("make");
-    make.arg("-C").arg(&libkrun_root);
-    make.arg(format!("-j{}", host_parallelism()));
-    // build-local.sh points Cargo at a shared temp target dir, but the upstream
-    // Makefile expects artifacts under its local ./target tree.
-    make.env_remove("CARGO_TARGET_DIR");
-    match platform {
-        Platform {
-            os: PlatformOs::Macos,
-            arch: PlatformArch::Aarch64,
-        } => {
-            make.arg("BLK=1");
-        }
-        Platform {
-            os: PlatformOs::Macos,
-            arch: PlatformArch::X86_64,
-        } => {
-            make.arg("EFI=1");
-        }
-        Platform {
-            os: PlatformOs::Linux,
-            ..
-        } => {
-            make.arg("BLK=1");
-        }
-    };
-    if platform.os == PlatformOs::Macos {
-        if let Some(arch) = upstream_libkrun_arch(platform) {
-            make.arg(format!("ARCH={arch}"));
-        }
-        let clang = preferred_host_clang().context(
-            "missing clang for libkrun source build on macOS; install Xcode command line tools or Homebrew llvm",
-        )?;
-        let lld = preferred_ld_lld().context(
-            "missing ld.lld for libkrun source build on macOS; install Homebrew lld or use a standard Rust toolchain",
-        )?;
-        let libclang_dir = preferred_libclang_dir(&clang).context(
-            "missing libclang.dylib for libkrun source build on macOS; install Xcode command line tools or Homebrew llvm",
-        )?;
-        stage_libclang_runtime(&libkrun_root, &libclang_dir)?;
-        prepend_env_path(
-            &mut make,
-            "PATH",
-            lld.parent().context("ld.lld has no parent directory")?,
-        );
-        prepend_env_path(&mut make, "DYLD_LIBRARY_PATH", &libclang_dir);
-        prepend_env_path(&mut make, "DYLD_FALLBACK_LIBRARY_PATH", &libclang_dir);
-        make.env("LIBCLANG_PATH", &libclang_dir);
-        make.arg(format!("CLANG={}", clang.display()));
-        make.arg(format!(
-            "CC_LINUX={}",
-            macos_cc_linux_value(&libkrun_root, platform, &clang)
-        ));
-    }
-    run(make, "building libkrun from third_party/upstream/libkrun")?;
-    let built = find_built_lib(&libkrun_root.join("target").join("release"), platform)?;
-    let lib_dir = runtime_dir.join("lib");
-    fs::create_dir_all(&lib_dir).with_context(|| format!("creating {}", lib_dir.display()))?;
-    fs::copy(&built, lib_dir.join(platform.lib_name()))
-        .with_context(|| format!("copying {} into runtime bundle", built.display()))?;
-    if platform.os == PlatformOs::Macos {
-        let firmware_src = libkrun_root.join("edk2").join("KRUN_EFI.silent.fd");
-        let firmware_dst = runtime_dir
-            .join("share")
-            .join("krunkit")
-            .join("KRUN_EFI.silent.fd");
-        ensure!(
-            firmware_src.is_file(),
-            "missing libkrun firmware source: {}",
-            firmware_src.display()
-        );
-        fs::copy(&firmware_src, &firmware_dst).with_context(|| {
-            format!(
-                "copying firmware {} into runtime bundle",
-                firmware_src.display()
-            )
-        })?;
-    }
-    maybe_build_libkrunfw_support(root, platform, runtime_dir)?;
-    Ok(())
-}
-
-fn host_parallelism() -> usize {
-    thread::available_parallelism().map_or(1, usize::from)
-}
-
-fn upstream_libkrun_arch(platform: Platform) -> Option<&'static str> {
-    if platform.os != PlatformOs::Macos {
-        return None;
-    }
-    Some(match platform.arch {
-        // Upstream Makefile uses ARCH in Debian and FreeBSD download URLs.
-        // Their archive naming is amd64, while our host arch remains x86_64.
-        PlatformArch::X86_64 => "amd64",
-        PlatformArch::Aarch64 => "arm64",
-    })
-}
-
-fn find_built_lib(target_dir: &Path, platform: Platform) -> anyhow::Result<PathBuf> {
-    let mut candidates = Vec::new();
-    for entry in
-        fs::read_dir(target_dir).with_context(|| format!("reading {}", target_dir.display()))?
-    {
-        let path = entry?.path();
-        let name = path.file_name().and_then(OsStr::to_str).unwrap_or_default();
-        let matches = match platform.os {
-            PlatformOs::Macos => name.starts_with("libkrun") && name.ends_with(".dylib"),
-            PlatformOs::Linux => name.starts_with("libkrun") && name.contains(".so"),
-        };
-        if matches && path.is_file() {
-            candidates.push(path);
-        }
-    }
-    candidates.sort();
-    candidates
-        .into_iter()
-        .last()
-        .context("unable to locate built libkrun artifact")
-}
-
-fn collect_runtime_support(lib_dir: &Path, libkrun: &Path) -> anyhow::Result<Vec<PathBuf>> {
-    let mut files = Vec::new();
-    for entry in fs::read_dir(lib_dir).with_context(|| format!("reading {}", lib_dir.display()))? {
-        let path = entry?.path();
-        if !path.is_file() || path == libkrun {
-            continue;
-        }
-        files.push(path);
-    }
-    files.sort();
-    Ok(files)
 }

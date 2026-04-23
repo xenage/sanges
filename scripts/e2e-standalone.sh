@@ -102,7 +102,6 @@ e2e_log_value "host platform" "${HOST_OS}/${HOST_ARCH}"
 
 run_sagens() {
   env \
-    -u SAGENS_LIBKRUN_LIBRARY \
     -u SAGENS_KERNEL \
     -u SAGENS_ROOTFS \
     -u SAGENS_FIRMWARE \
@@ -117,7 +116,6 @@ run_sagens_with_config() {
   local config_path="$1"
   shift
   env \
-    -u SAGENS_LIBKRUN_LIBRARY \
     -u SAGENS_KERNEL \
     -u SAGENS_ROOTFS \
     -u SAGENS_FIRMWARE \

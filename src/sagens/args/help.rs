@@ -25,7 +25,9 @@ pub(super) fn parse_help_topic(args: &[String]) -> Result<HelpTopic> {
         [] => HelpTopic::Root,
         ["start"] => HelpTopic::Start,
         ["quit"] => HelpTopic::Quit,
+        ["update"] => HelpTopic::Update,
         ["daemon"] => HelpTopic::Daemon,
+        ["daemon", "log"] => HelpTopic::DaemonLog,
         ["admin"] => HelpTopic::Admin,
         ["admin", "add"] => HelpTopic::AdminAdd,
         ["admin", "remove", "me"] => HelpTopic::AdminRemoveMe,
@@ -64,7 +66,9 @@ pub(super) fn render_usage_hint(topic: HelpTopic) -> String {
         HelpTopic::Root => "usage: sagens <command> [args]".into(),
         HelpTopic::Start => "usage: sagens start".into(),
         HelpTopic::Quit => "usage: sagens quit".into(),
-        HelpTopic::Daemon => "usage: sagens daemon".into(),
+        HelpTopic::Update => "usage: sagens update".into(),
+        HelpTopic::Daemon => "usage: sagens daemon [log [--tail LINES] [--follow]]".into(),
+        HelpTopic::DaemonLog => "usage: sagens daemon log [--tail LINES] [--follow]".into(),
         HelpTopic::Admin => "usage: sagens admin <add|remove me>".into(),
         HelpTopic::AdminAdd => "usage: sagens admin add".into(),
         HelpTopic::AdminRemoveMe => "usage: sagens admin remove me".into(),
@@ -106,7 +110,7 @@ pub(super) fn render_usage_hint(topic: HelpTopic) -> String {
 }
 
 pub(super) fn short_usage() -> &'static str {
-    "usage: sagens <start|quit|daemon|admin|box> [args]"
+    "usage: sagens <start|quit|update|daemon|admin|box> [args]"
 }
 
 fn render_page(theme: &Theme, page: PageSpec<'_>) -> String {

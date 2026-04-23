@@ -13,12 +13,20 @@ pub(super) fn page_for<'a>(topic: HelpTopic, theme: &'a Theme) -> PageSpec<'a> {
             commands: &[
                 ("start", "Start the daemon and print endpoint/mode."),
                 ("quit", "Gracefully stop the daemon if it is running."),
-                ("daemon", "Run the daemon in the foreground."),
+                (
+                    "update",
+                    "Download the latest release binary and replace this executable.",
+                ),
+                (
+                    "daemon",
+                    "Run the daemon in the foreground or inspect daemon logs.",
+                ),
                 ("admin", "Manage admin credentials."),
                 ("box", "Create, inspect, configure, and operate BOXes."),
             ],
             examples: &[
                 "sagens start",
+                "sagens update",
                 "sagens box new",
                 "sagens box start <UUID>",
                 "sagens box exec <UUID> bash",
@@ -47,14 +55,49 @@ pub(super) fn page_for<'a>(topic: HelpTopic, theme: &'a Theme) -> PageSpec<'a> {
                 "Falls back to terminating a stale recorded daemon if graceful shutdown fails.",
             ],
         },
+        HelpTopic::Update => PageSpec {
+            title: "sagens update",
+            about: "Download the latest GitHub release for this platform and replace the current executable.",
+            badge: Some(theme.badge("Self-update", BadgeStyle::Accent)),
+            usage: &["sagens update"],
+            commands: &[],
+            examples: &["sagens update"],
+            notes: &[
+                "The release asset is selected automatically for linux/macos on x86_64/aarch64.",
+                "Checksums are verified before the binary is staged and swapped into place.",
+                "If a daemon is already running, restart it afterward so background work uses the new binary.",
+            ],
+        },
         HelpTopic::Daemon => PageSpec {
             title: "sagens daemon",
-            about: "Run the daemon in the foreground.",
+            about: "Run the daemon in the foreground or inspect daemon logs.",
             badge: Some(theme.badge("Foreground", BadgeStyle::Muted)),
-            usage: &["sagens daemon"],
+            usage: &[
+                "sagens daemon",
+                "sagens daemon log [--tail LINES] [--follow]",
+            ],
+            commands: &[("log", "Print the daemon log and optionally tail/follow it.")],
+            examples: &["sagens daemon", "sagens daemon log --tail 200 --follow"],
+            notes: &[
+                "Bare `sagens daemon` runs the control-plane process in the foreground.",
+                "The log subcommand reads `daemon.log` from the resolved state directory.",
+            ],
+        },
+        HelpTopic::DaemonLog => PageSpec {
+            title: "sagens daemon log",
+            about: "Read and follow the daemon log for sandbox startup and runtime failures.",
+            badge: Some(theme.badge("Logs", BadgeStyle::Accent)),
+            usage: &["sagens daemon log [--tail LINES] [--follow]"],
             commands: &[],
-            examples: &["sagens daemon"],
-            notes: &["Primarily used by `sagens start` and embedding flows."],
+            examples: &[
+                "sagens daemon log",
+                "sagens daemon log --tail 100",
+                "sagens daemon log --tail 200 --follow",
+            ],
+            notes: &[
+                "When BOX startup fails, the daemon log now records the related runner and guest console log paths.",
+                "Use `--follow` to keep streaming new daemon events while reproducing a flaky BOX start.",
+            ],
         },
         HelpTopic::Admin => PageSpec {
             title: "sagens admin",

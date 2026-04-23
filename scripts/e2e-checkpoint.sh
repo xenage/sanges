@@ -64,7 +64,6 @@ ENDPOINT="ws://127.0.0.1:${PORT}"
 
 run_sagens() {
   env \
-    -u SAGENS_LIBKRUN_LIBRARY \
     -u SAGENS_KERNEL \
     -u SAGENS_ROOTFS \
     -u SAGENS_FIRMWARE \

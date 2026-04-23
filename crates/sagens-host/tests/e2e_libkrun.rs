@@ -17,7 +17,7 @@ mod host_e2e {
     };
 
     use super::support::e2e::{
-        configure_libkrun_test_helper, default_wheelhouse, enabled, env, state_dir,
+        configure_libkrun_test_helper, default_wheelhouse, enabled, env, guest_assets, state_dir,
         upload_directory_box,
     };
 
@@ -32,26 +32,20 @@ mod host_e2e {
             .or_else(default_wheelhouse)
             .expect("local wheelhouse must exist in SAGENS_WHEELHOUSE or .e2e-wheelhouse");
         configure_libkrun_test_helper();
+        let guest_assets = guest_assets();
+        let guest_kernel_format = GuestKernelFormat::detect_from_path(
+            &guest_assets.kernel_image,
+            GuestKernelFormat::default_for_host(),
+        );
         let state_dir = state_dir();
         let runtime: Arc<dyn SandboxService> = Arc::new(
             AgentSandboxService::new(RuntimeConfig {
                 state_dir: state_dir.clone(),
                 guest: GuestConfig {
-                    libkrun_library: env("SAGENS_LIBKRUN_LIBRARY")
-                        .map(PathBuf::from)
-                        .unwrap_or_default(),
-                    kernel_image: env("SAGENS_KERNEL").map(PathBuf::from).unwrap_or_default(),
-                    kernel_format: env("SAGENS_KERNEL_FORMAT")
-                        .map(|value| GuestKernelFormat::parse(&value).expect("kernel format"))
-                        .unwrap_or_else(|| {
-                            if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-                                GuestKernelFormat::PeGz
-                            } else {
-                                GuestKernelFormat::Raw
-                            }
-                        }),
-                    rootfs_image: env("SAGENS_ROOTFS").map(PathBuf::from).unwrap_or_default(),
-                    firmware: env("SAGENS_FIRMWARE").map(PathBuf::from),
+                    kernel_image: guest_assets.kernel_image,
+                    kernel_format: guest_kernel_format,
+                    rootfs_image: guest_assets.rootfs_image,
+                    firmware: guest_assets.firmware,
                     guest_agent_path: env("SAGENS_GUEST_AGENT_PATH")
                         .unwrap_or_else(|| "/usr/local/bin/sagens-guest-agent".into())
                         .into(),

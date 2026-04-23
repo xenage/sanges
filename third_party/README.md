@@ -6,39 +6,20 @@ This directory is the project-local home for non-Rust runtime inputs used by `sa
 
 - `upstream/`
   - source submodules for upstream projects used for provenance and rebuild workflows
-- `runtime/`
-  - materialized local runtime bundles produced by `cargo run --bin xtask -- ...`
-  - generated local build state, not repo-owned source of truth
 
-## Upstream submodules
+## Upstream source
 
-The repository defines these submodules in `.gitmodules`:
+The current standalone build flow requires:
 
 - `third_party/upstream/libkrun`
 - `third_party/upstream/libkrunfw`
-- `third_party/upstream/krunkit`
+- `third_party/upstream/linux-loader` as a pinned local override so `libkrun` and `linux-loader`
+  resolve against the same `vm-memory` ABI on Linux builders
 
-`xtask` initializes them on demand when Git metadata is available, and the packaging path rebuilds the host runtime from `third_party/upstream/libkrun`.
-
-## Runtime bundle
-
-The default dev path is intentionally local-first:
-
-- build the host binary from this repository
-- embed the guest/runtime artifacts from this repository
-- avoid manual `.env` files and ad-hoc path exports
-
-`xtask` writes a project-local runtime bundle under `third_party/runtime/<platform>/`.
-Treat that directory as generated local state: its provenance source remains the
-tracked submodules under `third_party/upstream/`.
-
-The intended flow is:
-
-- build `libkrun` from `third_party/upstream/libkrun`
-- stage the resulting runtime library into `third_party/runtime/<platform>/lib`
-- stage any runtime support libraries required by that platform into the same bundle
-- stage firmware into `third_party/runtime/<platform>/share/krunkit/` on macOS
-- embed those paths into the standalone `sagens` binary through a temporary manifest consumed by `build.rs`
+`xtask` initializes the submodule-backed upstream checkouts on demand when Git metadata is
+available.
+The standalone host binary links vendored `libkrun` at build time and embeds guest assets
+directly from repository-managed inputs.
 
 ## Guest artifacts
 
@@ -46,6 +27,5 @@ Guest images remain under `artifacts/`, for example:
 
 - `artifacts/alpine-aarch64/rootfs.raw`
 - `artifacts/alpine-aarch64/vmlinuz-virt`
-- `artifacts/alpine-aarch64/vmlinuz-virt.pe.gz`
 
 Those are the project-local inputs used by the dev build unless explicitly overridden.

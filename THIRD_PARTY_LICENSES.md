@@ -10,13 +10,6 @@ It is informational only and does not replace the upstream license texts.
 
 ## Vendored upstream components
 
-### `third_party/upstream/krunkit`
-
-- Upstream project: `krunkit`
-- Repository path: `third_party/upstream/krunkit`
-- License: Apache-2.0
-- Source of truth: upstream license file in that directory
-
 ### `third_party/upstream/libkrun`
 
 - Upstream project: `libkrun`
@@ -39,28 +32,33 @@ accompanied by the corresponding source for the bundled kernel and library
 code. This repository keeps the upstream source tree under
 `third_party/upstream/libkrunfw` for provenance and rebuild workflows.
 
-## Generated runtime and guest artifacts
+### `third_party/upstream/linux-loader`
 
-`sagens` packaging can embed generated runtime and guest assets into release
+- Upstream project: `linux-loader`
+- Repository path: `third_party/upstream/linux-loader`
+- License: Apache-2.0 AND BSD-3-Clause
+- Source of truth: upstream crate license files in that directory
+
+## Generated guest artifacts
+
+`sagens` packaging can embed generated guest assets into standalone release
 artifacts. Those payloads may include materials derived from:
 
-- `libkrun`
+- statically linked `libkrun`
 - `libkrunfw`
 - Alpine guest image inputs fetched during the guest build path
 
-The generated bundle directories under `third_party/runtime/<platform>/` are
-local build outputs. They are not the provenance source of truth; use the
-tracked upstream source trees under `third_party/upstream/` plus the build
-pipeline documentation in [docs/BUILD.md](docs/BUILD.md).
+The tracked upstream source trees under `third_party/upstream/` are the
+provenance source of truth for these embedded payloads.
 
 ## Release artifact composition
 
 Standalone `sagens` binaries may include:
 
 - first-party `sagens` host code
-- embedded `libkrun` runtime components
-- firmware or support libraries materialized from the runtime bundle
-- generated guest kernel or root filesystem assets required by the runtime path
+- statically linked `libkrun`
+- embedded guest kernel or root filesystem assets required by the runtime path
+- macOS firmware embedded from the vendored `libkrun` checkout when needed
 
 If you redistribute release artifacts, review the upstream licenses above and
 carry forward any notices or corresponding-source obligations that apply to the

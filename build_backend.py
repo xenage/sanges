@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import platform as host_platform
 import shutil
 import subprocess
 import sys
@@ -74,14 +73,10 @@ def _stage_host_binary(config_settings: dict[str, object] | None) -> None:
         "--",
         "dev",
         "--release",
+        "--skip-guest-refresh",
         "--python-package-root",
         "python",
     ]
-    if (
-        sys.platform == "darwin"
-        and host_platform.machine().lower() in {"arm64", "aarch64"}
-    ):
-        command.append("--refresh-runtime")
     if _debug_build_requested(config_settings):
         command.remove("--release")
     _run(command)

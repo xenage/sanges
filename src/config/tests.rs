@@ -37,24 +37,10 @@ fn rejects_reserved_guest_vsock_port() {
     assert!(config.validate().is_err());
 }
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-#[test]
-fn macos_aarch64_allows_firmwareless_guest_when_kernel_is_embedded() {
-    let mut config = guest_config();
-    config.kernel_image = PathBuf::new();
-    config.firmware = None;
-    assert!(config.validate().is_ok());
-}
-
 fn guest_config() -> GuestConfig {
     GuestConfig {
-        libkrun_library: PathBuf::from("/usr/lib/libkrun.so"),
         kernel_image: PathBuf::from("/box/vmlinux"),
-        kernel_format: if cfg!(target_os = "macos") {
-            GuestKernelFormat::PeGz
-        } else {
-            GuestKernelFormat::Raw
-        },
+        kernel_format: GuestKernelFormat::Raw,
         rootfs_image: PathBuf::from("/box/rootfs.raw"),
         firmware: if cfg!(target_os = "macos") {
             Some(PathBuf::from("/usr/share/libkrun/edk2-aarch64-code.fd"))
@@ -88,4 +74,21 @@ fn rejects_secure_mode_without_cgroup_parent() {
         default_policy: SandboxPolicy::default(),
     };
     assert!(config.validate().is_err());
+}
+
+#[test]
+fn detects_gzip_wrapped_x86_kernel_probe() {
+    let probe = b"MZ\x00\x00padding\x1f\x8b\x08";
+    assert_eq!(
+        GuestKernelFormat::detect_from_probe(probe, GuestKernelFormat::Raw),
+        GuestKernelFormat::ImageGz
+    );
+}
+
+#[test]
+fn falls_back_when_probe_is_unknown() {
+    assert_eq!(
+        GuestKernelFormat::detect_from_probe(b"raw-kernel", GuestKernelFormat::Raw),
+        GuestKernelFormat::Raw
+    );
 }

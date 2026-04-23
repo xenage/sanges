@@ -44,6 +44,32 @@ pub(crate) struct BoxShellHandle {
     shell_id: Uuid,
 }
 
+pub(super) fn remote_error(message: impl Into<String>) -> SandboxError {
+    let message = message.into();
+    if let Some(detail) = message.strip_prefix("invalid configuration: ") {
+        return SandboxError::invalid(detail);
+    }
+    if let Some(detail) = message.strip_prefix("not found: ") {
+        return SandboxError::not_found(detail);
+    }
+    if let Some(detail) = message.strip_prefix("conflict: ") {
+        return SandboxError::conflict(detail);
+    }
+    if let Some(detail) = message.strip_prefix("backend failure: ") {
+        return SandboxError::backend(detail);
+    }
+    if let Some(detail) = message.strip_prefix("unsupported host: ") {
+        return SandboxError::UnsupportedHost(detail.to_owned());
+    }
+    if let Some(detail) = message.strip_prefix("protocol error: ") {
+        return SandboxError::protocol(detail);
+    }
+    if let Some(detail) = message.strip_prefix("timeout: ") {
+        return SandboxError::timeout(detail);
+    }
+    SandboxError::backend(message)
+}
+
 impl BoxApiClient {
     pub async fn connect(config: &UserConfig) -> Result<Self> {
         Self::connect_with_auth(
@@ -270,4 +296,25 @@ fn decode_bytes(context: &str, value: &str) -> Result<Vec<u8>> {
     base64::engine::general_purpose::STANDARD
         .decode(value)
         .map_err(|error| SandboxError::protocol(format!("{context}: {error}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remote_error;
+
+    #[test]
+    fn remote_backend_errors_do_not_double_wrap() {
+        let error =
+            remote_error("backend failure: guest connect failed: unexpected exception: 0x20");
+        assert_eq!(
+            error.to_string(),
+            "backend failure: guest connect failed: unexpected exception: 0x20"
+        );
+    }
+
+    #[test]
+    fn remote_timeout_errors_preserve_timeout_kind() {
+        let error = remote_error("timeout: guest RPC did not become ready");
+        assert_eq!(error.to_string(), "timeout: guest RPC did not become ready");
+    }
 }

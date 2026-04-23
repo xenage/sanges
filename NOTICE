@@ -10,6 +10,3 @@ See:
 - LICENSE
 - THIRD_PARTY_LICENSES.md
 - third_party/upstream/
-
-Generated runtime bundles under third_party/runtime/ are build outputs, not the
-source-of-truth location for upstream provenance.

@@ -13,6 +13,7 @@ use crate::bundle;
 use crate::config::{RuntimeConfig, SandboxSpec};
 use crate::guest_rpc::GuestRuntimeStats;
 use crate::host_hardening;
+use crate::host_log;
 use crate::protocol::{CommandStream, ExecRequest, ShellRequest};
 use crate::runtime::registry::{ManagedSandbox, SessionRegistry};
 use crate::runtime::{SandboxSessionRecord, SandboxSessionSummary};
@@ -91,7 +92,12 @@ impl AgentSandboxService {
             loop {
                 tokio::time::sleep(reap_interval).await;
                 for sandbox_id in registry.idle_candidates(idle_timeout).await {
-                    let _ = service.destroy_sandbox_inner(sandbox_id).await;
+                    if let Err(error) = service.destroy_sandbox_inner(sandbox_id).await {
+                        host_log::emit(
+                            "runtime",
+                            format!("idle reap failed sandbox_id={sandbox_id} error={error}"),
+                        );
+                    }
                 }
             }
         });

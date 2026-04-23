@@ -1,5 +1,6 @@
 mod manager;
 mod policy;
+mod record;
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
@@ -10,6 +11,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::config::{IsolationMode, SandboxPolicy};
+use crate::host_log;
 use crate::protocol::{CommandStream, ExecRequest, ShellRequest};
 use crate::runtime::SandboxService;
 use crate::workspace::{
@@ -33,62 +35,6 @@ pub struct LocalBoxService {
     pub(super) default_policy: SandboxPolicy,
     pub(super) isolation_mode: IsolationMode,
     pub(super) active: RwLock<HashMap<Uuid, Uuid>>,
-}
-
-impl LocalBoxService {
-    pub async fn new(
-        state_dir: impl Into<std::path::PathBuf>,
-        workspace_config: WorkspaceConfig,
-        default_policy: SandboxPolicy,
-        isolation_mode: IsolationMode,
-        runtime: Arc<dyn SandboxService>,
-    ) -> Result<Self> {
-        let state_dir = state_dir.into();
-        let boxes = BoxStore::new(&state_dir);
-        boxes.ensure_layout().await?;
-        let workspace = WorkspaceStore::new(&state_dir, workspace_config.clone());
-        workspace.ensure_layout().await?;
-        let service = Self {
-            state_dir,
-            runtime,
-            boxes,
-            workspace,
-            workspace_config,
-            default_policy,
-            isolation_mode,
-            active: RwLock::new(HashMap::new()),
-        };
-        service.reconcile_after_restart().await?;
-        Ok(service)
-    }
-
-    async fn create_box_record(
-        &self,
-        name: Option<String>,
-        settings: Option<super::BoxSettings>,
-    ) -> Result<BoxRecord> {
-        let box_id = Uuid::new_v4();
-        let workspace = self
-            .workspace
-            .prepare_workspace(&box_id.to_string())
-            .await?;
-        let record = BoxRecord {
-            box_id,
-            name,
-            status: BoxStatus::Created,
-            settings,
-            runtime_usage: None,
-            workspace_path: workspace.disk_path,
-            active_sandbox_id: None,
-            created_at_ms: now_ms(),
-            last_start_at_ms: None,
-            last_stop_at_ms: None,
-            last_error: None,
-        };
-        let record = self.hydrate_record(record).await?;
-        self.boxes.write(&record).await?;
-        Ok(record)
-    }
 }
 
 #[async_trait]
@@ -167,6 +113,7 @@ impl BoxManager for LocalBoxService {
                 "BOX {box_id} is already running"
             )));
         }
+        host_log::emit("box", format!("start requested box_id={box_id}"));
         match self
             .runtime
             .create_sandbox(crate::config::SandboxSpec {
@@ -182,10 +129,18 @@ impl BoxManager for LocalBoxService {
                 record.active_sandbox_id = Some(session.sandbox_id);
                 record.last_start_at_ms = Some(now_ms());
                 record.last_error = None;
+                host_log::emit(
+                    "box",
+                    format!(
+                        "start succeeded box_id={} sandbox_id={}",
+                        record.box_id, session.sandbox_id
+                    ),
+                );
                 self.boxes.write(&record).await?;
                 self.attach_runtime_usage(record).await
             }
             Err(error) => {
+                host_log::emit("box", format!("start failed box_id={box_id} error={error}"));
                 self.set_failed(record, error.to_string()).await?;
                 Err(error)
             }
@@ -199,6 +154,7 @@ impl BoxManager for LocalBoxService {
                 "BOX {box_id} is not running"
             )));
         }
+        host_log::emit("box", format!("stop requested box_id={box_id}"));
         let sandbox_id = self.running_sandbox_id(box_id).await?;
         match self.runtime.destroy_sandbox(sandbox_id).await {
             Ok(_) => {
@@ -207,10 +163,24 @@ impl BoxManager for LocalBoxService {
                 record.active_sandbox_id = None;
                 record.last_stop_at_ms = Some(now_ms());
                 record.last_error = None;
+                host_log::emit(
+                    "box",
+                    format!(
+                        "stop succeeded box_id={} sandbox_id={sandbox_id}",
+                        record.box_id
+                    ),
+                );
                 self.boxes.write(&record).await?;
                 Ok(record)
             }
             Err(error) => {
+                host_log::emit(
+                    "box",
+                    format!(
+                        "stop failed box_id={} sandbox_id={} error={error}",
+                        record.box_id, sandbox_id
+                    ),
+                );
                 self.set_failed(record, error.to_string()).await?;
                 Err(error)
             }

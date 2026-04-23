@@ -1,12 +1,8 @@
 mod config;
 mod instance;
 mod loader;
-#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-mod qemu_hvf;
 pub mod runner;
 
-#[cfg(target_os = "macos")]
-use std::ffi::OsStr;
 use std::fs::File;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 #[cfg(unix)]
@@ -20,15 +16,12 @@ use async_trait::async_trait;
 use tokio::process::Child;
 
 use crate::backend::{Backend, BackendLaunchOutput, BackendLaunchRequest};
-use crate::config::{GuestKernelFormat, IsolationMode};
+use crate::config::IsolationMode;
 use crate::guest_transport::GuestTransportEndpoint;
 use crate::host_hardening;
 use crate::{Result, SandboxError};
 
-const RUNNER_ENV: &str = "SAGENS_LIBKRUN_RUNNER";
-const RUNNER_EXE_ENV: &str = "SAGENS_LIBKRUN_RUNNER_EXE";
-const PYTHON_RUNNER_MODE: &str = "python-subprocess";
-const SELF_RUNNER_MODE: &str = "self-subprocess";
+const HOST_BINARY_ENV: &str = "SAGENS_HOST_BINARY";
 pub(super) const RUNNER_STARTUP_FD_ENV: &str = "SAGENS_LIBKRUN_STARTUP_FD";
 const MIN_LINUX_X86_64_RAW_KERNEL_MEMORY_MB: u32 = 3329;
 const RECOMMENDED_LINUX_X86_64_RAW_KERNEL_MEMORY_MB: u32 = 3584;
@@ -47,7 +40,6 @@ impl Backend for LibkrunBackend {
         }
         match runner_mode {
             RunnerMode::Thread => {}
-            RunnerMode::PythonSubprocess => return launch_python_runner(request).await,
             RunnerMode::SelfSubprocess => return launch_self_runner(request).await,
         }
         prepare_runner_artifacts(
@@ -111,38 +103,30 @@ impl Backend for LibkrunBackend {
     }
 
     fn name(&self) -> &'static str {
-        "libkrun"
+        sagens_libkrun::BACKEND_NAME
     }
 }
 
 enum RunnerMode {
     Thread,
-    PythonSubprocess,
     SelfSubprocess,
 }
 
-fn runner_mode() -> RunnerMode {
-    match std::env::var(RUNNER_ENV).ok().as_deref() {
-        Some(PYTHON_RUNNER_MODE) => RunnerMode::PythonSubprocess,
-        Some(SELF_RUNNER_MODE) => RunnerMode::SelfSubprocess,
-        _ if should_use_self_runner_for_current_binary() => RunnerMode::SelfSubprocess,
-        _ => RunnerMode::Thread,
-    }
-}
-
 fn effective_runner_mode(isolation_mode: IsolationMode) -> RunnerMode {
-    if isolation_mode == IsolationMode::Secure {
-        return RunnerMode::SelfSubprocess;
+    if isolation_mode == IsolationMode::Secure
+        || cfg!(target_os = "macos")
+        || should_use_self_runner_for_current_binary()
+    {
+        RunnerMode::SelfSubprocess
+    } else {
+        RunnerMode::Thread
     }
-    runner_mode()
 }
 
 fn validate_launch_request(request: &BackendLaunchRequest) -> Result<()> {
-    let Some(min_memory_mb) = min_memory_mb_for_host_kernel(
-        std::env::consts::OS,
-        std::env::consts::ARCH,
-        request.guest.kernel_format,
-    ) else {
+    let Some(min_memory_mb) =
+        min_memory_mb_for_host_kernel(std::env::consts::OS, std::env::consts::ARCH)
+    else {
         return Ok(());
     };
     if request.policy.memory_mb >= min_memory_mb {
@@ -153,12 +137,8 @@ fn validate_launch_request(request: &BackendLaunchRequest) -> Result<()> {
     )))
 }
 
-fn min_memory_mb_for_host_kernel(
-    host_os: &str,
-    host_arch: &str,
-    kernel_format: GuestKernelFormat,
-) -> Option<u32> {
-    if host_os == "linux" && host_arch == "x86_64" && kernel_format == GuestKernelFormat::Raw {
+fn min_memory_mb_for_host_kernel(host_os: &str, host_arch: &str) -> Option<u32> {
+    if host_os == "linux" && host_arch == "x86_64" {
         return Some(MIN_LINUX_X86_64_RAW_KERNEL_MEMORY_MB);
     }
     None
@@ -178,29 +158,6 @@ fn should_use_self_runner_for_current_binary() -> bool {
 
 fn is_sagens_self_runner_binary(stem: &str) -> bool {
     stem == "sagens" || stem.starts_with("sagens-")
-}
-
-async fn launch_python_runner(request: BackendLaunchRequest) -> Result<BackendLaunchOutput> {
-    let config = config::build_runner_config(&request);
-    prepare_runner_artifacts(
-        &request.run_layout,
-        request.hardening.runner_log_limit_bytes,
-    )?;
-    config::write_debug_runner_config(&request.run_layout.runner_config, &config).await?;
-    let current_exe = resolve_runner_executable("discovering embedded python executable")?;
-    let mut command = tokio::process::Command::new(current_exe);
-    command
-        .arg("-m")
-        .arg("sagens._vm_runner")
-        .arg(&request.run_layout.runner_config);
-    let child = spawn_runner_process(command, &request, "python").await?;
-    Ok(BackendLaunchOutput {
-        instance: Arc::new(instance::LibkrunInstance::new_process(child)),
-        guest_endpoint: GuestTransportEndpoint::new(
-            request.run_layout.vsock_socket.clone(),
-            request.guest.guest_vsock_port,
-        ),
-    })
 }
 
 async fn launch_self_runner(request: BackendLaunchRequest) -> Result<BackendLaunchOutput> {
@@ -240,17 +197,6 @@ async fn spawn_runner_process(
     let stderr = log_file
         .try_clone()
         .map_err(|error| SandboxError::io("cloning libkrun runner log", error))?;
-    #[cfg(target_os = "macos")]
-    if let Some(bundle_dir) = request.guest.libkrun_library.parent() {
-        for name in ["DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH"] {
-            let mut value = bundle_dir.as_os_str().to_os_string();
-            if let Some(existing) = std::env::var_os(name).filter(|value| !value.is_empty()) {
-                value.push(OsStr::new(":"));
-                value.push(existing);
-            }
-            command.env(name, value);
-        }
-    }
     command
         .stdin(Stdio::null())
         .stdout(Stdio::from(log_file))
@@ -349,7 +295,7 @@ fn open_private_log(path: &std::path::Path) -> Result<File> {
 }
 
 fn resolve_runner_executable(context: &str) -> Result<std::path::PathBuf> {
-    if let Some(path) = std::env::var_os(RUNNER_EXE_ENV).filter(|value| !value.is_empty()) {
+    if let Some(path) = std::env::var_os(HOST_BINARY_ENV).filter(|value| !value.is_empty()) {
         return Ok(path.into());
     }
     std::env::current_exe().map_err(|error| SandboxError::io(context, error))
@@ -358,7 +304,6 @@ fn resolve_runner_executable(context: &str) -> Result<std::path::PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{is_sagens_self_runner_binary, min_memory_mb_for_host_kernel};
-    use crate::config::GuestKernelFormat;
 
     #[test]
     fn recognizes_packaged_and_local_sagens_binaries() {
@@ -374,26 +319,13 @@ mod tests {
     }
 
     #[test]
-    fn requires_extra_ram_for_linux_x86_64_raw_kernels() {
-        assert_eq!(
-            min_memory_mb_for_host_kernel("linux", "x86_64", GuestKernelFormat::Raw),
-            Some(3329)
-        );
+    fn requires_extra_ram_for_linux_x86_64() {
+        assert_eq!(min_memory_mb_for_host_kernel("linux", "x86_64"), Some(3329));
     }
 
     #[test]
-    fn skips_extra_ram_guard_for_other_hosts_or_kernel_formats() {
-        assert_eq!(
-            min_memory_mb_for_host_kernel("linux", "x86_64", GuestKernelFormat::Elf),
-            None
-        );
-        assert_eq!(
-            min_memory_mb_for_host_kernel("macos", "x86_64", GuestKernelFormat::Raw),
-            None
-        );
-        assert_eq!(
-            min_memory_mb_for_host_kernel("linux", "aarch64", GuestKernelFormat::Raw),
-            None
-        );
+    fn skips_extra_ram_guard_for_other_hosts() {
+        assert_eq!(min_memory_mb_for_host_kernel("macos", "x86_64"), None);
+        assert_eq!(min_memory_mb_for_host_kernel("linux", "aarch64"), None);
     }
 }

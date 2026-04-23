@@ -162,6 +162,7 @@ class ManagedDaemonPaths:
     user_config_path: Path
     endpoint: str
     pid_path: Path
+    daemon_log_path: Path
 
 
 @dataclass(frozen=True)

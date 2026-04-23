@@ -1,4 +1,7 @@
+use std::fs::File;
+use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -66,7 +69,6 @@ impl RuntimeConfig {
 
 #[derive(Debug, Clone)]
 pub struct GuestConfig {
-    pub libkrun_library: PathBuf,
     pub kernel_image: PathBuf,
     pub kernel_format: GuestKernelFormat,
     pub rootfs_image: PathBuf,
@@ -90,6 +92,10 @@ pub enum GuestKernelFormat {
 }
 
 impl GuestKernelFormat {
+    pub fn default_for_host() -> Self {
+        Self::Raw
+    }
+
     pub fn parse(value: &str) -> Result<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
             "raw" => Ok(Self::Raw),
@@ -103,12 +109,49 @@ impl GuestKernelFormat {
             ))),
         }
     }
+
+    pub fn detect_from_path(path: &Path, fallback: Self) -> Self {
+        if path.as_os_str().is_empty() {
+            return fallback;
+        }
+        let Ok(mut file) = File::open(path) else {
+            return fallback;
+        };
+        let mut probe = [0u8; 8192];
+        let Ok(read) = file.read(&mut probe) else {
+            return fallback;
+        };
+        Self::detect_from_probe(&probe[..read], fallback)
+    }
+
+    pub fn detect_from_probe(probe: &[u8], fallback: Self) -> Self {
+        if probe.starts_with(b"\x7fELF") {
+            return Self::Elf;
+        }
+        // Linux x86_64 distro kernels are often EFI/PE-wrapped and carry the real
+        // compressed kernel image deeper in the file.
+        if probe.starts_with(b"MZ") {
+            if probe.windows(3).any(|window| window == [0x1f, 0x8b, 0x08]) {
+                return Self::ImageGz;
+            }
+            if probe.windows(3).any(|window| window == *b"BZh") {
+                return Self::ImageBz2;
+            }
+            if probe
+                .windows(4)
+                .any(|window| window == [0x28, 0xb5, 0x2f, 0xfd])
+            {
+                return Self::ImageZstd;
+            }
+        }
+        fallback
+    }
 }
 
 impl GuestConfig {
     pub fn validate(&self) -> Result<()> {
         for (name, path) in [
-            ("libkrun_library", &self.libkrun_library),
+            ("kernel_image", &self.kernel_image),
             ("rootfs_image", &self.rootfs_image),
             ("guest_agent_path", &self.guest_agent_path),
         ] {
@@ -116,7 +159,7 @@ impl GuestConfig {
                 return Err(SandboxError::invalid(format!("{name} must not be empty")));
             }
         }
-        if cfg!(all(target_os = "macos", target_arch = "x86_64")) && self.firmware.is_none() {
+        if cfg!(target_os = "macos") && self.firmware.is_none() {
             return Err(SandboxError::invalid(
                 "firmware must be configured for libkrun on macOS",
             ));
