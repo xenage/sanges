@@ -82,12 +82,18 @@ fn refresh_workspace(state: &mut StubState, box_id: Uuid) {
         .file_data
         .iter()
         .filter(|((id, _), _)| *id == box_id)
-        .map(|((_, path), data)| (path.trim_start_matches("/workspace/").to_string(), data.len()))
+        .map(|((_, path), data)| {
+            (
+                path.trim_start_matches("/workspace/").to_string(),
+                data.len(),
+            )
+        })
         .collect::<Vec<_>>();
     paths.sort_by(|left, right| left.0.cmp(&right.0));
     state.files.insert(
         box_id,
-        paths.iter()
+        paths
+            .iter()
             .map(|(path, len)| FileNode {
                 path: path.clone(),
                 kind: FileKind::File,
@@ -99,7 +105,8 @@ fn refresh_workspace(state: &mut StubState, box_id: Uuid) {
     );
     state.changes.insert(
         box_id,
-        paths.iter()
+        paths
+            .iter()
             .map(|(path, _)| WorkspaceChange {
                 path: path.clone(),
                 kind: WorkspaceChangeKind::Added,

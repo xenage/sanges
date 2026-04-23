@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import socket
 import sys
 import tempfile
@@ -36,16 +37,12 @@ def real_daemon() -> Iterator[Daemon]:
         config_path = state_dir / "config.json"
         endpoint = f"ws://127.0.0.1:{free_port()}"
         host_binary = resolve_host_binary()
-        with env_override(
-            SAGENS_LIBKRUN_RUNNER="self-subprocess",
-            SAGENS_LIBKRUN_RUNNER_EXE=host_binary,
-        ):
-            daemon = Daemon.start(
-                host_binary=host_binary,
-                state_dir=state_dir,
-                user_config_path=config_path,
-                endpoint=endpoint,
-            )
+        daemon = Daemon.start(
+            host_binary=host_binary,
+            state_dir=state_dir,
+            user_config_path=config_path,
+            endpoint=endpoint,
+        )
         try:
             yield daemon
         finally:
@@ -55,11 +52,12 @@ def real_daemon() -> Iterator[Daemon]:
 
 @contextmanager
 def e2e_daemon() -> Iterator[Daemon]:
-    if real_box_runtime_supported():
-        with real_daemon() as daemon:
-            yield daemon
-        return
-    with smoke_server() as daemon:
+    if not real_box_runtime_supported():
+        raise RuntimeError(
+            "full python e2e requires the standalone runtime on linux(/dev/kvm) "
+            "or macos/arm64; run smoke tests instead on unsupported hosts"
+        )
+    with real_daemon() as daemon:
         yield daemon
 
 
@@ -70,9 +68,11 @@ def e2e_enabled() -> bool:
 def real_box_runtime_supported() -> bool:
     if os.environ.get("SAGENS_FORCE_REAL_BOX_E2E", "").lower() in {"1", "true", "yes"}:
         return True
-    if sys.platform != "linux":
-        return False
-    return Path("/dev/kvm").exists()
+    if sys.platform == "linux":
+        return Path("/dev/kvm").exists()
+    if sys.platform == "darwin":
+        return platform.machine() in {"aarch64", "arm64"}
+    return False
 
 
 @contextmanager
@@ -91,21 +91,6 @@ def free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
-
-
-@contextmanager
-def env_override(**values: str) -> Iterator[None]:
-    previous = {key: os.environ.get(key) for key in values}
-    for key, value in values.items():
-        os.environ[key] = value
-    try:
-        yield
-    finally:
-        for key, value in previous.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
 
 
 def _config_kwargs(payload: str) -> dict[str, object]:

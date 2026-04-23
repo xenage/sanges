@@ -330,6 +330,12 @@ class BoxApiClient:
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(file.data)
             return
+        if _is_single_file_listing(remote_path, entries):
+            file = self.read_file(box_id, remote_path, 16 * 1024 * 1024)
+            destination = resolve_download_file_path(remote_path, target)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(file.data)
+            return
         target.mkdir(parents=True, exist_ok=True)
         for entry in entries:
             destination = target / entry.path
@@ -384,3 +390,10 @@ class BoxApiClient:
         request_id = self._transport.next_request_id()
         request["request_id"] = request_id
         return self._transport.request_response(request, expected_type)
+
+
+def _is_single_file_listing(remote_path: str, entries: list[FileNode]) -> bool:
+    if len(entries) != 1 or entries[0].kind.value != "file":
+        return False
+    relative_remote = remote_path.removeprefix("/workspace/").strip("/")
+    return bool(relative_remote) and entries[0].path == relative_remote

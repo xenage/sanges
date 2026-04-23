@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
+use crate::Result;
 use crate::auth::{UserConfig, read_user_config};
 use crate::sagens::config::{SagensPaths, resolve_paths};
-use crate::Result;
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ManagedDaemonOptions {

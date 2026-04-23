@@ -42,7 +42,9 @@ pub fn spawn_daemon_process(
     user_config_path: Option<String>,
     endpoint: Option<String>,
 ) -> PyResult<DaemonProcessHandle> {
-    let state_dir = state_dir.map(PathBuf::from).unwrap_or_else(default_state_dir);
+    let state_dir = state_dir
+        .map(PathBuf::from)
+        .unwrap_or_else(default_state_dir);
     let user_config_path = user_config_path
         .map(PathBuf::from)
         .unwrap_or_else(|| state_dir.join("config.json"));
@@ -70,12 +72,14 @@ pub fn quit_daemon(
     user_config_path: Option<String>,
     endpoint: Option<String>,
 ) -> PyResult<bool> {
-    let state_dir = state_dir.map(PathBuf::from).unwrap_or_else(default_state_dir);
+    let state_dir = state_dir
+        .map(PathBuf::from)
+        .unwrap_or_else(default_state_dir);
     let config_path = user_config_path
         .map(PathBuf::from)
         .unwrap_or_else(|| state_dir.join("config.json"));
-    let mut user_config = block_on(sagens_host::auth::read_user_config(&config_path))?
-        .map_err(runtime_error)?;
+    let mut user_config =
+        block_on(sagens_host::auth::read_user_config(&config_path))?.map_err(runtime_error)?;
     if let Some(endpoint) = endpoint {
         user_config.endpoint = endpoint;
     }
@@ -84,8 +88,8 @@ pub fn quit_daemon(
 
 #[pyfunction]
 pub fn read_user_config_json(path: String) -> PyResult<String> {
-    let config = block_on(sagens_host::auth::read_user_config(Path::new(&path)))?
-        .map_err(runtime_error)?;
+    let config =
+        block_on(sagens_host::auth::read_user_config(Path::new(&path)))?.map_err(runtime_error)?;
     serde_json::to_string(&config).map_err(runtime_error)
 }
 
@@ -96,17 +100,11 @@ fn close_child(handle: &mut DaemonProcessHandle) -> PyResult<bool> {
     block_on(async { shutdown_if_running(&handle.user_config).await })?.map_err(runtime_error)?;
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        if child
-            .try_wait()
-            .map_err(runtime_error)?
-            .is_some()
-        {
+        if child.try_wait().map_err(runtime_error)?.is_some() {
             return Ok(true);
         }
         if Instant::now() >= deadline {
-            child
-                .kill()
-                .map_err(runtime_error)?;
+            child.kill().map_err(runtime_error)?;
             let _ = child.wait();
             return Ok(true);
         }
@@ -134,7 +132,10 @@ fn spawn_process(
         .env("SAGENS_STATE_DIR", state_dir)
         .env("SAGENS_CONFIG", user_config_path)
         .env("SAGENS_ENDPOINT", &user_config.endpoint)
-        .env("SAGENS_BOOTSTRAP_ADMIN_UUID", user_config.admin_uuid.to_string())
+        .env(
+            "SAGENS_BOOTSTRAP_ADMIN_UUID",
+            user_config.admin_uuid.to_string(),
+        )
         .env("SAGENS_BOOTSTRAP_ADMIN_TOKEN", &user_config.admin_token)
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))

@@ -54,7 +54,9 @@ pub fn start_test_server(isolation_mode: Option<String>) -> PyResult<TestServerH
         Err(RecvTimeoutError::Timeout) => {
             return Err(runtime_error("timed out waiting for python test server"));
         }
-        Err(RecvTimeoutError::Disconnected) => return Err(runtime_error("python test server exited")),
+        Err(RecvTimeoutError::Disconnected) => {
+            return Err(runtime_error("python test server exited"));
+        }
     };
     Ok(TestServerHandle {
         user_config_json,
@@ -86,7 +88,9 @@ fn run_server_thread(
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
-        .map_err(|error| sagens_host::SandboxError::io("building python test server runtime", error))?;
+        .map_err(|error| {
+            sagens_host::SandboxError::io("building python test server runtime", error)
+        })?;
     runtime.block_on(async move { run_server(isolation_mode, ready_tx, stop_rx).await })
 }
 

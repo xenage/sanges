@@ -3,7 +3,6 @@ mod exec;
 mod shell;
 mod state;
 
-use std::collections::BTreeMap;
 use async_trait::async_trait;
 use sagens_host::backend::ShellSession;
 use sagens_host::boxes::{BoxManager, BoxRecord, BoxSettingValue, BoxStatus};
@@ -14,6 +13,7 @@ use sagens_host::workspace::{
     CheckpointRestoreMode, FileKind, FileNode, ReadFileResult, WorkspaceChange,
     WorkspaceChangeKind, WorkspaceCheckpointRecord, WorkspaceCheckpointSummary,
 };
+use std::collections::BTreeMap;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -34,7 +34,14 @@ impl BoxManager for StubBoxManager {
     }
 
     async fn get_box(&self, box_id: Uuid) -> sagens_host::Result<BoxRecord> {
-        Ok(self.state.lock().await.boxes.get(&box_id).cloned().expect("box"))
+        Ok(self
+            .state
+            .lock()
+            .await
+            .boxes
+            .get(&box_id)
+            .cloned()
+            .expect("box"))
     }
 
     async fn create_box(&self) -> sagens_host::Result<BoxRecord> {
@@ -198,7 +205,11 @@ impl BoxManager for StubBoxManager {
                     })
                     .await;
             }
-            let _ = tx.send(ExecutionEvent::Exit { status: plan.status }).await;
+            let _ = tx
+                .send(ExecutionEvent::Exit {
+                    status: plan.status,
+                })
+                .await;
             exec_running.lock().await.remove(&box_id);
         });
         Ok(CommandStream::new(rx))

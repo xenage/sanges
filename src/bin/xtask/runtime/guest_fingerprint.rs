@@ -13,10 +13,7 @@ pub(crate) fn guest_artifacts_stale(root: &Path, platform: Platform) -> anyhow::
     let kernel = super::guest_kernel_path(root, platform);
     let rootfs = super::guest_rootfs_path(root, platform);
     let fingerprint_path = guest_artifact_fingerprint_path(root, platform);
-    if !kernel.is_file()
-        || !rootfs.is_file()
-        || !fingerprint_path.is_file()
-    {
+    if !kernel.is_file() || !rootfs.is_file() || !fingerprint_path.is_file() {
         return Ok(true);
     }
     let current = current_guest_artifact_fingerprint(root, platform)?;

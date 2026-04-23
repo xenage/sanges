@@ -5,12 +5,15 @@ from pathlib import Path
 
 
 def resolve_host_binary() -> str:
-    explicit = os.environ.get("SAGENS_PYTHON_HOST_BINARY")
+    explicit = os.environ.get("SAGENS_PYTHON_HOST_BINARY") or os.environ.get("SAGENS_HOST_BINARY")
     if explicit:
         return explicit
     packaged = Path(__file__).resolve().parent / "_bin" / "sagens"
     if packaged.is_file():
         return str(packaged)
+    repo_release_binary = Path(__file__).resolve().parents[2] / "target" / "release" / "sagens"
+    if repo_release_binary.is_file():
+        return str(repo_release_binary)
     repo_binary = Path(__file__).resolve().parents[2] / "target" / "debug" / "sagens"
     if repo_binary.is_file():
         return str(repo_binary)

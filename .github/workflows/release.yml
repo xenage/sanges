@@ -236,13 +236,53 @@ jobs:
         run: |
           brew install llvm lld xz zig
 
-      - name: Install standalone Python package
+      - name: Build standalone Python wheel
         run: |
           python -m pip install --upgrade pip
-          python -m pip install . pytest
+          python -m pip wheel . --no-deps -w python-dist
+
+      - name: Install standalone Python wheel
+        run: python -m pip install pytest python-dist/*.whl
+
+      - name: Verify standalone Python payload
+        run: |
+          payload_json="$(mktemp)"
+          tmpdir="$(mktemp -d)"
+          (
+            cd "$tmpdir"
+            python - <<'PY' > "$payload_json"
+from pathlib import Path
+import json
+import sagens._rust
+from sagens._binary import resolve_host_binary
+
+print(json.dumps({
+    "host_binary": str(Path(resolve_host_binary()).resolve()),
+    "rust_ext": str(Path(sagens._rust.__file__).resolve()),
+}))
+PY
+          )
+          host_binary="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["host_binary"])' "$payload_json")"
+          rust_ext="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["rust_ext"])' "$payload_json")"
+          test -f "$host_binary"
+          test -f "$rust_ext"
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            ! otool -L "$host_binary" | grep -q 'libkrun'
+            ! otool -L "$rust_ext" | grep -q 'libkrun'
+          else
+            ! ldd "$host_binary" | grep -q 'libkrun'
+            ! ldd "$rust_ext" | grep -q 'libkrun'
+          fi
 
       - name: Run Python smoke tests
         run: python -m pytest python/tests -q --ignore=python/tests/test_e2e.py
+
+      - name: Upload Python wheel artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-dist-${{ matrix.platform }}
+          path: python-dist/*.whl
+          if-no-files-found: error
 
       - name: Show sccache stats
         if: always()
@@ -284,62 +324,33 @@ jobs:
     if: needs.gate.outputs.should_run == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
     needs:
       - gate
-      - build
+      - test_smoke_python
     runs-on: xenage-kvm
-    env:
-      BUILD_CACHE_ROOT: ${{ github.workspace }}/.build-cache/linux-x86_64
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: sccache
-      CARGO_TARGET_DIR: ${{ github.workspace }}/.build-cache/linux-x86_64/target
-      SAGENS_GUEST_OUTPUT_DIR: ${{ github.workspace }}/.build-cache/linux-x86_64/guest-output
-      SAGENS_GUEST_WORK_DIR: ${{ github.workspace }}/.build-cache/linux-x86_64/guest-work
-      PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
       - uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
-
-      - name: Restore build cache
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ${{ env.CARGO_TARGET_DIR }}
-            ${{ env.SAGENS_GUEST_OUTPUT_DIR }}
-            ${{ env.SAGENS_GUEST_WORK_DIR }}
-          key: release-build-linux-x86_64
-
-      - name: Install Linux build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang lld llvm-dev libclang-dev pkg-config patchelf libc6-dev libelf-dev libssl-dev libncurses-dev bison flex dwarves cpio xz-utils bc kmod python3-pyelftools
 
       - name: Verify KVM is available
         run: |
           test -c /dev/kvm
           ls -l /dev/kvm
 
-      - name: Install standalone Python package
+      - name: Download standalone Python wheel
+        uses: actions/download-artifact@v8
+        with:
+          name: python-dist-linux-x86_64
+          path: python-dist
+
+      - name: Install standalone Python wheel
         run: |
           python -m pip install --upgrade pip
-          python -m pip install . pytest
+          python -m pip install pytest python-dist/*.whl
 
       - name: Run full Python e2e
         run: SAGENS_RUN_E2E=1 python -m pytest python/tests/test_e2e.py -q
-
-      - name: Show sccache stats
-        if: always()
-        run: ${SCCACHE_PATH} --show-stats
 
   release:
     name: Release
@@ -352,6 +363,7 @@ jobs:
       - test_linux_full
       - test_linux_full_python
     runs-on: ubuntu-24.04
+    environment: apple
     permissions:
       contents: write
     steps:
@@ -377,6 +389,14 @@ jobs:
         with:
           path: release-assets
           pattern: bundle-*
+          merge-multiple: true
+
+      - name: Download Python wheel artifacts
+        if: steps.verify.outputs.should_release == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          path: release-assets
+          pattern: python-dist-*
           merge-multiple: true
 
       - name: Remove obsolete macOS release assets
@@ -410,3 +430,19 @@ jobs:
             release-assets/sagens-*-linux-aarch64.sha256
             release-assets/sagens-*-macos-aarch64.zip
             release-assets/sagens-*-macos-aarch64.zip.sha256
+            release-assets/*.whl
+
+      - uses: actions/setup-python@v6
+        if: steps.verify.outputs.should_release == 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Publish Python wheels to PyPI
+        if: steps.verify.outputs.should_release == 'true'
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          python -m pip install --upgrade pip twine
+          python -m twine check release-assets/*.whl
+          python -m twine upload --skip-existing release-assets/*.whl

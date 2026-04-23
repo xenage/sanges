@@ -153,12 +153,7 @@ impl PackageArgs {
 
     fn run(self) -> anyhow::Result<()> {
         let root = repo_root()?;
-        let built = build_distribution_binary(
-            &root,
-            self.profile,
-            true,
-            self.skip_guest_refresh,
-        )?;
+        let built = build_distribution_binary(&root, self.profile, true, self.skip_guest_refresh)?;
         stage_python_binary_if_requested(&root, self.python_package_root.as_deref(), &built.path)?;
         let out_dir = absolutize(&root, &self.out_dir);
         std::fs::create_dir_all(&out_dir)

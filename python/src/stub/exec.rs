@@ -35,8 +35,7 @@ fn run_python_request(state: &mut StubState, box_id: Uuid, script: Option<&str>)
     if script.contains("sagens_e2e_pkg.NAME") {
         let persisted = read_workspace_file(state, box_id, "box.txt");
         let persisted = String::from_utf8_lossy(&persisted);
-        let package_name = if has_workspace_file(state, box_id, ".sandbox-pkgs/sagens_e2e_pkg.py")
-        {
+        let package_name = if has_workspace_file(state, box_id, ".sandbox-pkgs/sagens_e2e_pkg.py") {
             "wheel-ok"
         } else {
             "missing"
