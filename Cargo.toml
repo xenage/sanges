@@ -8,7 +8,16 @@ members = [
     "python",
     "xtask",
 ]
-exclude = ["third_party/upstream/libkrun"]
+exclude = [
+    "crates/upstream-arch",
+    "crates/upstream-arch-gen",
+    "crates/upstream-cpuid",
+    "crates/upstream-kernel",
+    "crates/upstream-polly",
+    "crates/upstream-smbios",
+    "crates/upstream-utils",
+    "third_party/upstream/libkrun",
+]
 default-members = [
     "crates/sagens-host",
     "crates/sagens-guest-agent",

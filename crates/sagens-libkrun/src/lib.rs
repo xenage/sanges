@@ -1,6 +1,9 @@
 pub const BACKEND_NAME: &str = "libkrun";
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[used]
 static FORCE_STATIC_KRUNFW_LINK: unsafe extern "C" fn(
     *mut u64,

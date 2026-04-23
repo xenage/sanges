@@ -38,6 +38,8 @@ fn asset_mode(_: &Path) -> u32 {
 }
 
 fn main() {
+    emit_macos_weak_hypervisor_link_args();
+
     let manifest_dir =
         PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let workspace_root = resolve_workspace_root(&manifest_dir);
@@ -60,6 +62,29 @@ fn main() {
     let generated = out_dir.join("embedded_bundle.rs");
     fs::write(&generated, render_assets(&manifest_path, &workspace_root))
         .expect("write embedded bundle");
+}
+
+fn emit_macos_weak_hypervisor_link_args() {
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+    if target_os != "macos" || target_arch != "aarch64" {
+        return;
+    }
+
+    for symbol in [
+        "hv_vm_config_get_el2_supported",
+        "hv_vm_config_set_el2_enabled",
+        "hv_gic_config_create",
+        "hv_gic_config_set_distributor_base",
+        "hv_gic_config_set_redistributor_base",
+        "hv_gic_create",
+        "hv_gic_get_distributor_size",
+        "hv_gic_get_redistributor_size",
+        "hv_gic_set_spi",
+    ] {
+        println!("cargo:rustc-link-arg-bins=-Wl,-U,_{symbol}");
+        println!("cargo:rustc-link-arg-tests=-Wl,-U,_{symbol}");
+    }
 }
 
 fn render_assets(manifest_path: &Path, workspace_root: &Path) -> String {

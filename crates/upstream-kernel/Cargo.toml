@@ -1,0 +1,11 @@
+[package]
+name = "kernel"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+vm-memory = { version = "0.17", features = ["backend-mmap"] }
+utils = { path = "../upstream-utils" }
+
+[lib]
+path = "../../third_party/upstream/libkrun/src/kernel/src/lib.rs"
