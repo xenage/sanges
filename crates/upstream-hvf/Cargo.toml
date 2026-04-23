@@ -1,0 +1,15 @@
+[package]
+name = "hvf"
+version = "0.1.100"
+authors = ["Sergio Lopez <slp@sinrega.org>"]
+edition = "2021"
+build = "build.rs"
+
+[dependencies]
+crossbeam-channel = ">=0.5.15"
+log = "0.4.0"
+
+arch = { path = "../../third_party/upstream/libkrun/src/arch" }
+
+[build-dependencies]
+cc = "1.2"

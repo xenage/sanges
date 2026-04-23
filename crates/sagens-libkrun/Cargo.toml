@@ -15,7 +15,7 @@ publish.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 upstream-libkrun = { package = "libkrun", path = "../upstream-libkrun", default-features = false, features = ["blk"] }
 
-[target.'cfg(all(target_os = "linux", target_arch = "x86_64"))'.dependencies]
+[target.'cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "aarch64")))'.dependencies]
 sagens-libkrunfw = { path = "../sagens-libkrunfw" }
 
 [target.'cfg(target_os = "macos")'.dependencies]

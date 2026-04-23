@@ -223,7 +223,7 @@ dependencies = [
 name = "aws-nitro"
 version = "0.1.0"
 dependencies = [
- "devices",
+ "devices 0.1.0",
  "libc",
  "log",
  "nitro-enclaves 0.6.1",
@@ -833,14 +833,38 @@ dependencies = [
  "bitflags 1.3.2",
  "caps",
  "crossbeam-channel",
- "hvf",
+ "hvf 0.1.0",
+ "imago",
+ "kvm-bindings",
+ "kvm-ioctls",
+ "libc",
+ "libloading",
+ "log",
+ "lru",
+ "nix 0.30.1",
+ "polly",
+ "rand 0.9.4",
+ "utils",
+ "virtio-bindings",
+ "vm-fdt",
+ "vm-memory",
+]
+
+[[package]]
+name = "devices"
+version = "0.1.100"
+dependencies = [
+ "arch",
+ "bitflags 1.3.2",
+ "caps",
+ "crossbeam-channel",
+ "hvf 0.1.100",
  "imago",
  "krun_display",
  "krun_input",
  "kvm-bindings",
  "kvm-ioctls",
  "libc",
- "libloading",
  "log",
  "lru",
  "nix 0.30.1",
@@ -1427,6 +1451,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hvf"
+version = "0.1.100"
+dependencies = [
+ "arch",
+ "cc",
+ "crossbeam-channel",
+ "log",
+]
+
+[[package]]
 name = "hybrid-array"
 version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1974,15 +2008,14 @@ version = "1.17.3"
 dependencies = [
  "aws-nitro",
  "crossbeam-channel",
- "devices",
+ "devices 0.1.100",
  "env_logger",
- "hvf",
+ "hvf 0.1.100",
  "krun_display",
  "krun_input",
  "kvm-bindings",
  "kvm-ioctls",
  "libc",
- "libloading",
  "log",
  "nitro-enclaves 0.5.0",
  "once_cell",
@@ -3141,7 +3174,7 @@ dependencies = [
 name = "sagens-libkrunfw"
 version = "0.1.0"
 dependencies = [
- "libloading",
+ "object",
 ]
 
 [[package]]
@@ -4061,7 +4094,7 @@ dependencies = [
 
 [[package]]
 name = "vmm"
-version = "0.1.0"
+version = "0.1.100"
 dependencies = [
  "arch",
  "arch_gen",
@@ -4070,9 +4103,9 @@ dependencies = [
  "bzip2 0.5.2",
  "cpuid",
  "crossbeam-channel",
- "devices",
+ "devices 0.1.100",
  "flate2",
- "hvf",
+ "hvf 0.1.100",
  "iocuddle",
  "kbs-types",
  "kernel",

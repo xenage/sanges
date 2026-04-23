@@ -3,22 +3,6 @@ use std::fs;
 use std::path::PathBuf;
 
 fn main() {
-    #[cfg(target_os = "linux")]
-    println!(
-        "cargo:rustc-cdylib-link-arg=-Wl,-soname,libkrun.so.{}",
-        env::var("CARGO_PKG_VERSION_MAJOR").unwrap()
-    );
-    #[cfg(target_os = "macos")]
-    println!(
-        "cargo:rustc-cdylib-link-arg=-Wl,-install_name,libkrun.{}.dylib,-compatibility_version,{}.0.0,-current_version,{}.{}.0",
-        env::var("CARGO_PKG_VERSION_MAJOR").unwrap(),
-        env::var("CARGO_PKG_VERSION_MAJOR").unwrap(),
-        env::var("CARGO_PKG_VERSION_MAJOR").unwrap(),
-        env::var("CARGO_PKG_VERSION_MINOR").unwrap()
-    );
-    #[cfg(target_os = "macos")]
-    println!("cargo:rustc-link-lib=framework=Hypervisor");
-
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let source_path = manifest_dir
         .join("../../third_party/upstream/libkrun/src/libkrun/src/lib.rs")
@@ -36,22 +20,18 @@ fn main() {
 fn apply_static_krunfw_patch(source: &str) -> String {
     let mut patched = source.to_owned();
 
-    patched = replace_exact(
-        patched,
-        "use std::sync::LazyLock;\n",
-        "#[cfg(not(all(target_os = \"linux\", target_arch = \"x86_64\", not(feature = \"tee\"))))]\nuse std::sync::LazyLock;\n",
-    );
+    patched = replace_exact(patched, "use std::sync::LazyLock;\n", "");
 
     patched = replace_exact(
         patched,
-        "#[cfg(all(target_os = \"linux\", not(feature = \"tee\")))]\nconst KRUNFW_NAME: &str = \"libkrunfw.so.5\";\n",
-        "#[cfg(all(target_os = \"linux\", target_arch = \"x86_64\", not(feature = \"tee\")))]\nconst KRUNFW_NAME: &str = \"statically linked libkrunfw\";\n#[cfg(all(target_os = \"linux\", not(feature = \"tee\"), not(target_arch = \"x86_64\")))]\nconst KRUNFW_NAME: &str = \"libkrunfw.so.5\";\n",
+        "#[cfg(all(target_os = \"linux\", not(feature = \"tee\")))]\nconst KRUNFW_NAME: &str = \"libkrunfw.so.5\";\n#[cfg(all(target_os = \"linux\", feature = \"amd-sev\"))]\nconst KRUNFW_NAME: &str = \"libkrunfw-sev.so.5\";\n#[cfg(all(target_os = \"linux\", feature = \"tdx\"))]\nconst KRUNFW_NAME: &str = \"libkrunfw-tdx.so.5\";\n#[cfg(target_os = \"macos\")]\nconst KRUNFW_NAME: &str = \"libkrunfw.5.dylib\";\n",
+        "const KRUNFW_NAME: &str = \"statically linked libkrunfw\";\n",
     );
 
     patched = replace_exact(
         patched,
         "static KRUNFW: LazyLock<Option<libloading::Library>> =\n    LazyLock::new(|| unsafe { libloading::Library::new(KRUNFW_NAME).ok() });\n\npub struct KrunfwBindings {\n    get_kernel: libloading::Symbol<\n        'static,\n        unsafe extern \"C\" fn(*mut u64, *mut u64, *mut size_t) -> *mut c_char,\n    >,\n    #[cfg(feature = \"tee\")]\n    get_initrd: libloading::Symbol<'static, unsafe extern \"C\" fn(*mut size_t) -> *mut c_char>,\n    #[cfg(feature = \"tee\")]\n    get_qboot: libloading::Symbol<'static, unsafe extern \"C\" fn(*mut size_t) -> *mut c_char>,\n}\n\nimpl KrunfwBindings {\n    fn load_bindings() -> Result<KrunfwBindings, libloading::Error> {\n        let krunfw = match KRUNFW.as_ref() {\n            Some(krunfw) => krunfw,\n            None => return Err(libloading::Error::DlOpenUnknown),\n        };\n        Ok(unsafe {\n            KrunfwBindings {\n                get_kernel: krunfw.get(b\"krunfw_get_kernel\")?,\n                #[cfg(feature = \"tee\")]\n                get_initrd: krunfw.get(b\"krunfw_get_initrd\")?,\n                #[cfg(feature = \"tee\")]\n                get_qboot: krunfw.get(b\"krunfw_get_qboot\")?,\n            }\n        })\n    }\n\n    pub fn new() -> Option<Self> {\n        Self::load_bindings().ok()\n    }\n}\n",
-        "#[cfg(not(all(target_os = \"linux\", target_arch = \"x86_64\", not(feature = \"tee\"))))]\nstatic KRUNFW: LazyLock<Option<libloading::Library>> =\n    LazyLock::new(|| unsafe { libloading::Library::new(KRUNFW_NAME).ok() });\n\n#[cfg(all(target_os = \"linux\", target_arch = \"x86_64\", not(feature = \"tee\")))]\nunsafe extern \"C\" {\n    fn krunfw_get_kernel(\n        kernel_guest_addr: *mut u64,\n        kernel_entry_addr: *mut u64,\n        kernel_size: *mut size_t,\n    ) -> *mut c_char;\n}\n\n#[cfg(all(target_os = \"linux\", target_arch = \"x86_64\", not(feature = \"tee\")))]\npub struct KrunfwBindings {\n    get_kernel: unsafe extern \"C\" fn(*mut u64, *mut u64, *mut size_t) -> *mut c_char,\n    #[cfg(feature = \"tee\")]\n    get_initrd: unsafe extern \"C\" fn(*mut size_t) -> *mut c_char,\n    #[cfg(feature = \"tee\")]\n    get_qboot: unsafe extern \"C\" fn(*mut size_t) -> *mut c_char,\n}\n\n#[cfg(not(all(target_os = \"linux\", target_arch = \"x86_64\", not(feature = \"tee\"))))]\npub struct KrunfwBindings {\n    get_kernel: libloading::Symbol<\n        'static,\n        unsafe extern \"C\" fn(*mut u64, *mut u64, *mut size_t) -> *mut c_char,\n    >,\n    #[cfg(feature = \"tee\")]\n    get_initrd: libloading::Symbol<'static, unsafe extern \"C\" fn(*mut size_t) -> *mut c_char>,\n    #[cfg(feature = \"tee\")]\n    get_qboot: libloading::Symbol<'static, unsafe extern \"C\" fn(*mut size_t) -> *mut c_char>,\n}\n\n#[cfg(all(target_os = \"linux\", target_arch = \"x86_64\", not(feature = \"tee\")))]\nimpl KrunfwBindings {\n    pub fn new() -> Option<Self> {\n        Some(Self {\n            get_kernel: krunfw_get_kernel,\n            #[cfg(feature = \"tee\")]\n            get_initrd: krunfw_get_initrd,\n            #[cfg(feature = \"tee\")]\n            get_qboot: krunfw_get_qboot,\n        })\n    }\n}\n\n#[cfg(not(all(target_os = \"linux\", target_arch = \"x86_64\", not(feature = \"tee\"))))]\nimpl KrunfwBindings {\n    fn load_bindings() -> Result<KrunfwBindings, libloading::Error> {\n        let krunfw = match KRUNFW.as_ref() {\n            Some(krunfw) => krunfw,\n            None => return Err(libloading::Error::DlOpenUnknown),\n        };\n        Ok(unsafe {\n            KrunfwBindings {\n                get_kernel: krunfw.get(b\"krunfw_get_kernel\")?,\n                #[cfg(feature = \"tee\")]\n                get_initrd: krunfw.get(b\"krunfw_get_initrd\")?,\n                #[cfg(feature = \"tee\")]\n                get_qboot: krunfw.get(b\"krunfw_get_qboot\")?,\n            }\n        })\n    }\n\n    pub fn new() -> Option<Self> {\n        Self::load_bindings().ok()\n    }\n}\n",
+        "#[cfg(all(target_os = \"linux\", any(target_arch = \"x86_64\", target_arch = \"aarch64\"), not(feature = \"tee\")))]\nunsafe extern \"C\" {\n    fn krunfw_get_kernel(\n        kernel_guest_addr: *mut u64,\n        kernel_entry_addr: *mut u64,\n        kernel_size: *mut size_t,\n    ) -> *mut c_char;\n}\n\npub struct KrunfwBindings {\n    get_kernel: unsafe extern \"C\" fn(*mut u64, *mut u64, *mut size_t) -> *mut c_char,\n    #[cfg(feature = \"tee\")]\n    get_initrd: unsafe extern \"C\" fn(*mut size_t) -> *mut c_char,\n    #[cfg(feature = \"tee\")]\n    get_qboot: unsafe extern \"C\" fn(*mut size_t) -> *mut c_char,\n}\n\n#[cfg(all(target_os = \"linux\", any(target_arch = \"x86_64\", target_arch = \"aarch64\"), not(feature = \"tee\")))]\nimpl KrunfwBindings {\n    pub fn new() -> Option<Self> {\n        Some(Self {\n            get_kernel: krunfw_get_kernel,\n            #[cfg(feature = \"tee\")]\n            get_initrd: krunfw_get_initrd,\n            #[cfg(feature = \"tee\")]\n            get_qboot: krunfw_get_qboot,\n        })\n    }\n}\n\n#[cfg(not(all(target_os = \"linux\", any(target_arch = \"x86_64\", target_arch = \"aarch64\"), not(feature = \"tee\"))))]\nimpl KrunfwBindings {\n    pub fn new() -> Option<Self> {\n        None\n    }\n}\n",
     );
 
     patched = replace_exact(
