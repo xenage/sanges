@@ -38,7 +38,12 @@ fn main() {
 }
 
 fn generate_root_source(source: &str, copied_src: &Path) -> String {
-    let mut patched = source.replace("//!", "///");
+    let mut patched = replace_exact(
+        source.to_owned(),
+        "//! Virtual Machine Monitor that leverages the Linux Kernel-based Virtual Machine (KVM),\n//! and other virtualization features to run a single lightweight micro-virtual\n//! machine (microVM).\n",
+        "// Virtual Machine Monitor that leverages the Linux Kernel-based Virtual Machine (KVM),\n// and other virtualization features to run a single lightweight micro-virtual\n// machine (microVM).\n",
+    );
+    patched = patched.replace("//!", "///");
     patched = replace_exact(
         patched,
         "pub mod builder;\n",

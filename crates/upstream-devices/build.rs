@@ -87,7 +87,7 @@ fn build_default_init(upstream_root: &Path) -> PathBuf {
 }
 
 fn generate_root_source(source: &str, copied_src: &Path) -> String {
-    let mut patched = source.replace("//!", "///");
+    let mut patched = source.replacen("//! ", "// ", 1);
     patched = replace_exact(
         patched,
         "mod bus;\n",

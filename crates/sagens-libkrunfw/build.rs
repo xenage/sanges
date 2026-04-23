@@ -259,6 +259,10 @@ static mut KERNEL_BUNDLE: AlignedKernelBundle<{kernel_size}> =
 pub static STATIC_KRUNFW_LINKED: () = ();
 
 #[unsafe(no_mangle)]
+/// # Safety
+///
+/// Each output pointer may be null. Non-null pointers must be valid for writes
+/// of the corresponding type for the duration of this call.
 pub unsafe extern "C" fn krunfw_get_kernel(
     load_addr: *mut u64,
     entry_addr: *mut u64,
@@ -279,7 +283,7 @@ pub unsafe extern "C" fn krunfw_get_kernel(
             *size = {kernel_size};
         }}
     }}
-    core::ptr::addr_of_mut!(KERNEL_BUNDLE.0).cast::<u8>().cast::<c_char>()
+    unsafe {{ core::ptr::addr_of_mut!(KERNEL_BUNDLE.0).cast::<u8>().cast::<c_char>() }}
 }}
 "#,
         kernel_path = kernel_output.display(),
