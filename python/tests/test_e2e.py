@@ -7,7 +7,7 @@ import pytest
 
 from sagens._shell import ShellExitEvent, ShellOutputEvent
 
-from .support import e2e_daemon, e2e_enabled, real_daemon, wheelhouse
+from .support import create_e2e_box, e2e_daemon, e2e_enabled, real_daemon, wheelhouse
 
 
 @pytest.mark.skipif(not e2e_enabled(), reason="set SAGENS_RUN_E2E=1 to run full python e2e")
@@ -23,7 +23,7 @@ def test_packaged_daemon_starts_and_creates_box_records() -> None:
 def test_box_lifecycle_preserves_workspace_across_restart() -> None:
     with wheelhouse() as wheelhouse_path:
         with e2e_daemon() as daemon:
-            box = daemon.create_box()
+            box = create_e2e_box(daemon)
             box.start()
 
             python = box.exec_python(
@@ -60,7 +60,7 @@ def test_box_shell_and_fs_roundtrip() -> None:
     with tempfile.TemporaryDirectory(prefix="sagens-python-fs-") as temp_dir:
         downloaded = Path(temp_dir) / "roundtrip.txt"
         with e2e_daemon() as daemon:
-            box = daemon.create_box()
+            box = create_e2e_box(daemon)
             box.start()
 
             box.fs.write("/workspace/roundtrip.txt", b"fs-e2e")
