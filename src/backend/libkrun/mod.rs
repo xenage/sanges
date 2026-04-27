@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use tokio::process::Child;
 
 use crate::backend::{Backend, BackendLaunchOutput, BackendLaunchRequest};
-use crate::config::{GuestKernelFormat, IsolationMode};
+use crate::config::IsolationMode;
 use crate::guest_transport::GuestTransportEndpoint;
 use crate::host_hardening;
 use crate::{Result, SandboxError};
