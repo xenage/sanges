@@ -508,11 +508,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          asset_ids="$(
-            gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
-              --jq '.assets[]? | select(.name | test("\\.whl$|sagens-.*-macos-x86_64(\\.zip(\\.sha256)?|\\.sha256)?$|sagens-.*-macos-aarch64(\\.sha256)?$")) | .id' \
-              2>/dev/null || true
-          )"
+          asset_ids_file="$(mktemp)"
+          if ! gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
+            --jq '.assets[]? | select(.name | test("\\.whl$|sagens-.*-macos-x86_64(\\.zip(\\.sha256)?|\\.sha256)?$|sagens-.*-macos-aarch64(\\.sha256)?$")) | .id' \
+            > "$asset_ids_file" 2>/dev/null; then
+            exit 0
+          fi
+          asset_ids="$(cat "$asset_ids_file")"
           if [[ -z "$asset_ids" ]]; then
             exit 0
           fi
