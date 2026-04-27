@@ -54,9 +54,6 @@ pub(super) fn build_guest_artifacts(
         (PlatformOs::Macos, PlatformArch::Aarch64) => {
             libkrunfw_kernel::materialize_macos_aarch64_guest_kernel(&work_dir, &output_dir)?;
         }
-        (PlatformOs::Linux, PlatformArch::X86_64) => {
-            libkrunfw_kernel::materialize_linux_x86_64_guest_kernel(&work_dir, &output_dir)?;
-        }
         _ => {}
     }
     Ok(())

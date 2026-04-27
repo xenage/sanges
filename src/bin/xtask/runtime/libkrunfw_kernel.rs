@@ -2,7 +2,6 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, ensure};
-use object::{Object, ObjectSection, ObjectSymbol};
 use tempfile::tempdir;
 
 use crate::cargo_ops::run;
@@ -10,12 +9,7 @@ use crate::cargo_ops::run;
 const PREBUILT_VERSION: &str = "v5.2.0";
 const PREBUILT_AARCH64_ARCHIVE: &str = "libkrunfw-prebuilt-aarch64.tgz";
 const PREBUILT_AARCH64_URL: &str = "https://github.com/containers/libkrunfw/releases/download/v5.2.0/libkrunfw-prebuilt-aarch64.tgz";
-const PREBUILT_X86_64_ARCHIVE: &str = "libkrunfw-x86_64.tgz";
-const PREBUILT_X86_64_URL: &str =
-    "https://github.com/containers/libkrunfw/releases/download/v5.2.0/libkrunfw-x86_64.tgz";
 const KERNEL_C_PATH: &str = "libkrunfw/kernel.c";
-const X86_64_LIBRARY_PATH: &str = "lib64/libkrunfw.so.5.2.0";
-const KERNEL_BUNDLE_SYMBOL: &str = "KERNEL_BUNDLE";
 const KERNEL_OUTPUT: &str = "vmlinuz-virt";
 
 pub(super) fn materialize_macos_aarch64_guest_kernel(
@@ -33,26 +27,6 @@ pub(super) fn materialize_macos_aarch64_guest_kernel(
     extract_kernel_c(&archive_path, extract_dir.path())?;
     let kernel_c = extract_dir.path().join(KERNEL_C_PATH);
     let kernel = parse_kernel_bundle(&kernel_c)?;
-
-    fs::create_dir_all(output_dir).with_context(|| format!("creating {}", output_dir.display()))?;
-    fs::write(output_dir.join(KERNEL_OUTPUT), kernel)
-        .with_context(|| format!("writing {}", output_dir.join(KERNEL_OUTPUT).display()))?;
-    Ok(())
-}
-
-pub(super) fn materialize_linux_x86_64_guest_kernel(
-    work_dir: &Path,
-    output_dir: &Path,
-) -> anyhow::Result<()> {
-    let archive_path = cached_prebuilt_archive(
-        work_dir,
-        "libkrunfw-x86_64",
-        PREBUILT_X86_64_ARCHIVE,
-        PREBUILT_X86_64_URL,
-    )?;
-    let extract_dir = tempdir().context("creating libkrunfw extraction directory")?;
-    extract_archive_member(&archive_path, X86_64_LIBRARY_PATH, extract_dir.path())?;
-    let kernel = parse_kernel_bundle_elf(&extract_dir.path().join(X86_64_LIBRARY_PATH))?;
 
     fs::create_dir_all(output_dir).with_context(|| format!("creating {}", output_dir.display()))?;
     fs::write(output_dir.join(KERNEL_OUTPUT), kernel)
@@ -158,53 +132,4 @@ fn decode_c_hex_bundle(escaped: &str) -> anyhow::Result<Vec<u8>> {
         );
     }
     Ok(output)
-}
-
-fn parse_kernel_bundle_elf(path: &Path) -> anyhow::Result<Vec<u8>> {
-    let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    let elf = object::File::parse(bytes.as_slice())
-        .with_context(|| format!("parsing ELF image {}", path.display()))?;
-    let symbol = elf
-        .dynamic_symbols()
-        .chain(elf.symbols())
-        .find(|symbol| matches!(symbol.name(), Ok(name) if name == KERNEL_BUNDLE_SYMBOL))
-        .context("locating KERNEL_BUNDLE symbol")?;
-    let section_index = symbol
-        .section_index()
-        .context("KERNEL_BUNDLE is not backed by an ELF section")?;
-    let section = elf
-        .section_by_index(section_index)
-        .context("reading ELF section for KERNEL_BUNDLE")?;
-    let section_data = section.uncompressed_data().with_context(|| {
-        format!(
-            "reading {} section bytes",
-            section.name().unwrap_or("<unnamed>")
-        )
-    })?;
-    let start = usize::try_from(
-        symbol
-            .address()
-            .checked_sub(section.address())
-            .context("KERNEL_BUNDLE starts before its section base")?,
-    )
-    .context("converting KERNEL_BUNDLE offset")?;
-    let size = usize::try_from(symbol.size()).context("converting KERNEL_BUNDLE size")?;
-    ensure!(size > 0, "KERNEL_BUNDLE symbol is empty");
-    let end = start
-        .checked_add(size)
-        .context("KERNEL_BUNDLE range overflowed section bounds")?;
-    ensure!(
-        end <= section_data.len(),
-        "KERNEL_BUNDLE range {}..{} exceeds {} section size {}",
-        start,
-        end,
-        section.name().unwrap_or("<unnamed>"),
-        section_data.len(),
-    );
-    let mut kernel = section_data[start..end].to_vec();
-    if kernel.last() == Some(&0) {
-        kernel.pop();
-    }
-    ensure!(!kernel.is_empty(), "decoded KERNEL_BUNDLE is empty");
-    Ok(kernel)
 }
