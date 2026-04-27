@@ -424,12 +424,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Build Python sdist
-        if: steps.verify.outputs.should_release == 'true'
-        run: |
-          python -m pip install --upgrade pip build maturin
-          python -m build --sdist --outdir release-assets .
-
       - name: Remove obsolete macOS release assets
         if: steps.verify.outputs.should_release == 'true'
         env:
