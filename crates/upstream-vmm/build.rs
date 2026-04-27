@@ -29,6 +29,7 @@ fn main() {
         fs::remove_dir_all(&copied_src).unwrap();
     }
     copy_dir_all(&upstream_src, &copied_src).unwrap();
+    patch_builder_source(&copied_src.join("builder.rs"));
 
     let root = generate_root_source(
         &fs::read_to_string(copied_src.join("lib.rs")).unwrap(),
@@ -142,6 +143,16 @@ fn emit_rerun_if_changed(path: &Path) {
         return;
     }
     println!("cargo:rerun-if-changed={}", path.display());
+}
+
+fn patch_builder_source(path: &Path) {
+    let source = fs::read_to_string(path).unwrap();
+    let patched = replace_exact(
+        source,
+        "            arch::arch_memory_regions(mem_size, Some(kernel_guest_addr), kernel_size, 0, None)\n",
+        "            let kernel_hole = if kernel_guest_addr.saturating_add(kernel_size as u64) <= mem_size as u64 {\n                Some(kernel_guest_addr)\n            } else {\n                None\n            };\n            arch::arch_memory_regions(mem_size, kernel_hole, kernel_size, 0, None)\n",
+    );
+    fs::write(path, patched).unwrap();
 }
 
 fn replace_exact(source: String, from: &str, to: &str) -> String {
