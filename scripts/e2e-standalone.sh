@@ -196,14 +196,6 @@ PS_OUT="$(e2e_run_capture "Show BOX table" "sagens box ps" run_sagens box ps)"
 assert_contains "$PS_OUT" "$BOX_ID"
 assert_contains "$PS_OUT" "CREATED"
 
-if [[ "$HOST_OS" == "Linux" && "$HOST_ARCH" == "x86_64" ]]; then
-  # libkrun mmaps the raw x86_64 kernel at 0x8000_0000 and reserves virtio-fs
-  # shared memory at 4 GiB, so we must push RAM past the 32-bit gap threshold.
-  SET_MEMORY_OUT="$(e2e_run_capture "Tune BOX RAM for Linux x86_64" "sagens box set $BOX_ID memory_mb 3584" run_sagens box set "$BOX_ID" memory_mb 3584)"
-  assert_contains "$SET_MEMORY_OUT" "$BOX_ID"
-  assert_contains "$SET_MEMORY_OUT" "3.5GiB"
-fi
-
 START_BOX_OUT="$(e2e_run_capture "Start BOX" "sagens box start $BOX_ID" run_sagens box start "$BOX_ID")"
 assert_contains "$START_BOX_OUT" "$BOX_ID"
 assert_contains "$START_BOX_OUT" "RUNNING"

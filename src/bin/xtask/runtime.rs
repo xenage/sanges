@@ -86,7 +86,11 @@ pub(super) fn resolve_artifacts(
 }
 
 pub(super) fn guest_kernel_path(root: &Path, platform: Platform) -> PathBuf {
-    guest_output_dir(root, platform).join("vmlinuz-virt")
+    let file_name = match (platform.os, platform.arch) {
+        (PlatformOs::Linux, PlatformArch::X86_64) => "vmlinuz-virt.pe.gz",
+        _ => "vmlinuz-virt",
+    };
+    guest_output_dir(root, platform).join(file_name)
 }
 
 pub(super) fn guest_rootfs_path(root: &Path, platform: Platform) -> PathBuf {

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import platform
 import statistics
 import sys
 import time
@@ -21,7 +20,6 @@ if str(PYTHON_ROOT) not in sys.path:
 from sagens import Daemon
 from sagens._binary import resolve_host_binary
 
-LINUX_X86_64_BENCH_MEMORY_MB = 3584
 HELLO_PYTHON_ARGS = ["-c", "print('hello from python')"]
 
 
@@ -58,7 +56,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--memory-mb",
         type=int,
-        help="Override BOX memory for the benchmark. On linux/x86_64 the default is 3584.",
+        help="Override BOX memory for the benchmark. Defaults to the daemon BOX policy.",
     )
     parser.add_argument(
         "--json",
@@ -77,11 +75,7 @@ def log(message: str) -> None:
 
 
 def benchmark_memory_mb(override: int | None) -> int | None:
-    if override is not None:
-        return override
-    if sys.platform == "linux" and platform.machine() == "x86_64":
-        return LINUX_X86_64_BENCH_MEMORY_MB
-    return None
+    return override
 
 
 def ensure_box_memory(box: Any, memory_mb: int | None) -> int | None:

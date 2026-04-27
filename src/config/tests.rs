@@ -86,9 +86,25 @@ fn detects_gzip_wrapped_x86_kernel_probe() {
 }
 
 #[test]
+fn detects_pe_gzip_kernel_from_file_name() {
+    assert_eq!(
+        GuestKernelFormat::detect_from_path(
+            std::path::Path::new("/box/vmlinuz-virt.pe.gz"),
+            GuestKernelFormat::Raw,
+        ),
+        GuestKernelFormat::PeGz
+    );
+}
+
+#[test]
 fn falls_back_when_probe_is_unknown() {
     assert_eq!(
         GuestKernelFormat::detect_from_probe(b"raw-kernel", GuestKernelFormat::Raw),
         GuestKernelFormat::Raw
     );
+}
+
+#[test]
+fn execution_policy_defaults_to_low_memory_box() {
+    assert_eq!(SandboxPolicy::default().memory_mb, 128);
 }

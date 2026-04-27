@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use tokio::process::Child;
 
 use crate::backend::{Backend, BackendLaunchOutput, BackendLaunchRequest};
-use crate::config::IsolationMode;
+use crate::config::{GuestKernelFormat, IsolationMode};
 use crate::guest_transport::GuestTransportEndpoint;
 use crate::host_hardening;
 use crate::{Result, SandboxError};
@@ -124,9 +124,12 @@ fn effective_runner_mode(isolation_mode: IsolationMode) -> RunnerMode {
 }
 
 fn validate_launch_request(request: &BackendLaunchRequest) -> Result<()> {
-    let Some(min_memory_mb) =
-        min_memory_mb_for_host_kernel(std::env::consts::OS, std::env::consts::ARCH)
-    else {
+    let Some(min_memory_mb) = min_memory_mb_for_launch_kernel(
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        request.guest.kernel_format,
+        request.guest.firmware.is_some(),
+    ) else {
         return Ok(());
     };
     if request.policy.memory_mb >= min_memory_mb {
@@ -137,8 +140,17 @@ fn validate_launch_request(request: &BackendLaunchRequest) -> Result<()> {
     )))
 }
 
-fn min_memory_mb_for_host_kernel(host_os: &str, host_arch: &str) -> Option<u32> {
-    if host_os == "linux" && host_arch == "x86_64" {
+fn min_memory_mb_for_launch_kernel(
+    host_os: &str,
+    host_arch: &str,
+    kernel_format: GuestKernelFormat,
+    firmware_configured: bool,
+) -> Option<u32> {
+    if host_os == "linux"
+        && host_arch == "x86_64"
+        && kernel_format == GuestKernelFormat::Raw
+        && !firmware_configured
+    {
         return Some(MIN_LINUX_X86_64_RAW_KERNEL_MEMORY_MB);
     }
     None
@@ -303,7 +315,8 @@ fn resolve_runner_executable(context: &str) -> Result<std::path::PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_sagens_self_runner_binary, min_memory_mb_for_host_kernel};
+    use super::{is_sagens_self_runner_binary, min_memory_mb_for_launch_kernel};
+    use crate::config::GuestKernelFormat;
 
     #[test]
     fn recognizes_packaged_and_local_sagens_binaries() {
@@ -319,13 +332,30 @@ mod tests {
     }
 
     #[test]
-    fn requires_extra_ram_for_linux_x86_64() {
-        assert_eq!(min_memory_mb_for_host_kernel("linux", "x86_64"), Some(3329));
+    fn requires_extra_ram_for_linux_x86_64_raw_kernel() {
+        assert_eq!(
+            min_memory_mb_for_launch_kernel("linux", "x86_64", GuestKernelFormat::Raw, false),
+            Some(3329)
+        );
     }
 
     #[test]
-    fn skips_extra_ram_guard_for_other_hosts() {
-        assert_eq!(min_memory_mb_for_host_kernel("macos", "x86_64"), None);
-        assert_eq!(min_memory_mb_for_host_kernel("linux", "aarch64"), None);
+    fn skips_extra_ram_guard_for_external_kernel_and_other_hosts() {
+        assert_eq!(
+            min_memory_mb_for_launch_kernel("linux", "x86_64", GuestKernelFormat::PeGz, false),
+            None
+        );
+        assert_eq!(
+            min_memory_mb_for_launch_kernel("linux", "x86_64", GuestKernelFormat::Raw, true),
+            None
+        );
+        assert_eq!(
+            min_memory_mb_for_launch_kernel("macos", "x86_64", GuestKernelFormat::Raw, false),
+            None
+        );
+        assert_eq!(
+            min_memory_mb_for_launch_kernel("linux", "aarch64", GuestKernelFormat::Raw, false),
+            None
+        );
     }
 }

@@ -114,6 +114,9 @@ impl GuestKernelFormat {
         if path.as_os_str().is_empty() {
             return fallback;
         }
+        if let Some(format) = Self::detect_from_file_name(path) {
+            return format;
+        }
         let Ok(mut file) = File::open(path) else {
             return fallback;
         };
@@ -145,6 +148,14 @@ impl GuestKernelFormat {
             }
         }
         fallback
+    }
+
+    fn detect_from_file_name(path: &Path) -> Option<Self> {
+        let file_name = path.file_name()?.to_str()?.to_ascii_lowercase();
+        if file_name.ends_with(".pe.gz") {
+            return Some(Self::PeGz);
+        }
+        None
     }
 }
 
@@ -312,7 +323,7 @@ impl Default for ExecutionPolicy {
     fn default() -> Self {
         Self {
             cpu_cores: 1,
-            memory_mb: 512,
+            memory_mb: 128,
             max_processes: 256,
             network_enabled: false,
             timeout_ms: None,

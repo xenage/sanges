@@ -53,9 +53,9 @@ mod host_e2e {
                     boot_timeout: Duration::from_secs(30),
                     guest_uid: 65_534,
                     guest_gid: 65_534,
-                    guest_tmpfs_mib: 256,
+                    guest_tmpfs_mib: 64,
                 },
-                workspace: WorkspaceConfig { disk_size_mib: 512 },
+                workspace: WorkspaceConfig { disk_size_mib: 128 },
                 control: ControlPlaneConfig::default(),
                 lifecycle: LifecycleConfig::default(),
                 isolation_mode: IsolationMode::Compat,
@@ -75,7 +75,7 @@ mod host_e2e {
         let service: Arc<dyn BoxManager> = Arc::new(
             LocalBoxService::new(
                 state_dir.clone(),
-                WorkspaceConfig { disk_size_mib: 512 },
+                WorkspaceConfig { disk_size_mib: 128 },
                 SandboxPolicy::default(),
                 IsolationMode::Compat,
                 runtime,

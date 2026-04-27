@@ -120,12 +120,12 @@ pub(super) fn fallback_settings() -> BoxSettings {
     BoxSettings {
         cpu_cores: BoxNumericSetting { current: 1, max: 1 },
         memory_mb: BoxNumericSetting {
-            current: 512,
-            max: 512,
+            current: 128,
+            max: 128,
         },
         fs_size_mib: BoxNumericSetting {
-            current: 512,
-            max: 512,
+            current: 128,
+            max: 128,
         },
         max_processes: BoxNumericSetting {
             current: 256,

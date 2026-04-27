@@ -277,7 +277,7 @@ jobs:
             fi
             codesign --verify --verbose=2 --strict "$host_binary"
             codesign --verify --verbose=2 --strict "$rust_ext"
-            codesign -d --entitlements :- "$host_binary" 2>/tmp/sagens-python-host-entitlements.plist
+            codesign -d --entitlements :- "$host_binary" >/tmp/sagens-python-host-entitlements.plist 2>/dev/null
             grep -q 'com.apple.security.hypervisor' /tmp/sagens-python-host-entitlements.plist
             if [[ "$GITHUB_REF" == refs/tags/* ]]; then
               for target in "$host_binary" "$rust_ext"; do

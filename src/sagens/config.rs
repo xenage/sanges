@@ -62,13 +62,13 @@ pub fn build_runtime_config_for_endpoint(
             boot_timeout: Duration::from_secs(30),
             guest_uid: 65_534,
             guest_gid: 65_534,
-            guest_tmpfs_mib: 256,
+            guest_tmpfs_mib: 64,
         },
         workspace: WorkspaceConfig {
             disk_size_mib: env::var("SAGENS_WORKSPACE_MIB")
                 .ok()
                 .and_then(|value| value.parse().ok())
-                .unwrap_or(512),
+                .unwrap_or(128),
         },
         control: ControlPlaneConfig {
             bind_addr: parse_endpoint_addr(endpoint)?,
@@ -201,7 +201,7 @@ fn default_project_artifact_candidates(kind: ProjectArtifactKind) -> Vec<PathBuf
     match kind {
         ProjectArtifactKind::Kernel => guest_dir
             .into_iter()
-            .map(|dir| dir.join("vmlinuz-virt"))
+            .flat_map(|dir| default_kernel_candidates(&dir))
             .collect(),
         ProjectArtifactKind::Rootfs => guest_dir
             .into_iter()
@@ -212,6 +212,16 @@ fn default_project_artifact_candidates(kind: ProjectArtifactKind) -> Vec<PathBuf
         }
         ProjectArtifactKind::Firmware => Vec::new(),
     }
+}
+
+fn default_kernel_candidates(guest_dir: &Path) -> Vec<PathBuf> {
+    if env::consts::OS == "linux" && env::consts::ARCH == "x86_64" {
+        return vec![
+            guest_dir.join("vmlinuz-virt.pe.gz"),
+            guest_dir.join("vmlinuz-virt"),
+        ];
+    }
+    vec![guest_dir.join("vmlinuz-virt")]
 }
 
 fn workspace_root() -> &'static Path {

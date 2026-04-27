@@ -23,12 +23,6 @@ BOX_ID=<box-id>
 "$BIN" quit
 ```
 
-If you are on linux/x86_64 and the first runtime start needs more RAM, set it before `box start`:
-
-```bash
-"$BIN" box set "$BOX_ID" memory_mb 3584
-```
-
 ## What just happened
 
 - `start` bootstrapped or reused the local daemon.

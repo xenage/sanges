@@ -54,7 +54,7 @@ pub fn guest_assets() -> GuestAssets {
     };
     let kernel_image = env("SAGENS_KERNEL")
         .map(PathBuf::from)
-        .unwrap_or_else(|| guest_dir.join("vmlinuz-virt"));
+        .unwrap_or_else(|| default_kernel_path(&guest_dir));
     let rootfs_image = env("SAGENS_ROOTFS")
         .map(PathBuf::from)
         .unwrap_or_else(|| guest_dir.join("rootfs.raw"));
@@ -84,6 +84,16 @@ pub fn guest_assets() -> GuestAssets {
         rootfs_image,
         firmware,
     }
+}
+
+fn default_kernel_path(guest_dir: &Path) -> PathBuf {
+    if std::env::consts::OS == "linux" && std::env::consts::ARCH == "x86_64" {
+        let compressed = guest_dir.join("vmlinuz-virt.pe.gz");
+        if compressed.is_file() {
+            return compressed;
+        }
+    }
+    guest_dir.join("vmlinuz-virt")
 }
 
 pub fn ensure_host_binary_ready(host_binary: &Path) {
