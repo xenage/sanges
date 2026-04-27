@@ -50,6 +50,12 @@ pub(super) fn build_guest_artifacts(
         .arg("--output-dir")
         .arg(&output_dir);
     run(command, "building Alpine guest artifacts")?;
+    if matches!(
+        (platform.os, platform.arch),
+        (PlatformOs::Linux, PlatformArch::X86_64)
+    ) {
+        libkrunfw_kernel::materialize_linux_x86_64_guest_kernel(&work_dir, &output_dir)?;
+    }
     if platform.arch == PlatformArch::Aarch64 {
         libkrunfw_kernel::materialize_aarch64_guest_kernel(&work_dir, &output_dir)?;
     }

@@ -46,6 +46,12 @@ fn apply_static_krunfw_patch(source: &str) -> String {
 
     patched = replace_exact(
         patched,
+        "        guest_addr: 0x8000_0000,\n        entry_addr: 0x8000_0000,\n",
+        "        guest_addr: 0x0100_0000,\n        entry_addr: 0x0100_0000,\n",
+    );
+
+    patched = replace_exact(
+        patched,
         "        if let Some(ref krunfw) = ctx_cfg.krunfw {\n            if let Err(err) = unsafe { load_krunfw_payload(krunfw, &mut ctx_cfg.vmr) } {\n                eprintln!(\"Can't load libkrunfw symbols: {err}\");\n                return -libc::ENOENT;\n            }\n        } else {\n",
         "        if let Some(ref krunfw) = ctx_cfg.krunfw {\n            unsafe { load_krunfw_payload(krunfw, &mut ctx_cfg.vmr) };\n        } else {\n",
     );
