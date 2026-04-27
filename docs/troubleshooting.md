@@ -39,7 +39,7 @@ sagens daemon log --tail 200
 
 When BOX startup fails, the log records the related runner and guest console log paths. That is the quickest route to the real failure.
 
-The default packaged linux/x86_64 runtime should boot with the tiny default RAM setting. If a local development build reports that the raw bundled kernel needs at least `3329 MiB`, rebuild from the current sources or check that the Alpine `vmlinuz-virt` asset is being detected as an `ImageGz` kernel rather than `Raw`.
+On Linux x86_64, the packaged libkrun kernel path currently needs more RAM than the tiny default. Set the BOX to at least `3584 MiB` before start if the daemon reports that the raw bundled kernel needs at least `3329 MiB`.
 
 ### A BOX suddenly shows `failed`
 
