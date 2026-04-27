@@ -18,6 +18,7 @@ from sagens._box import Box
 from sagens._decode import user_config_from_dict
 from sagens import _rust
 
+
 @contextmanager
 def smoke_server(mode: str = "compat") -> Iterator[Daemon]:
     handle = _rust.start_test_server(mode)
@@ -86,6 +87,8 @@ def wheelhouse() -> Iterator[Path]:
         output_dir = Path(temp_dir)
         build_test_wheel(output_dir)
         yield output_dir
+
+
 def _config_kwargs(payload: str) -> dict[str, object]:
     config = user_config_from_dict(json.loads(payload))
     return {
