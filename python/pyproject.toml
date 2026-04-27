@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "sagens"
-version = "0.0.0.0.1"
+version = "0.0.0.0.2"
 description = "Python bindings and client APIs for sagens microVM sandboxes."
 readme = "README.md"
 requires-python = ">=3.11"
