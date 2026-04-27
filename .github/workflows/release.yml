@@ -469,4 +469,4 @@ jobs:
           fi
           python -m pip install --upgrade pip twine
           python -m twine check release-assets/*.whl
-          python -m twine upload --skip-existing release-assets/*.whl
+          python -m twine upload --skip-existing --disable-progress-bar release-assets/*.whl

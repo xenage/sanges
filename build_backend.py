@@ -28,6 +28,7 @@ def build_wheel(
             wheel_directory,
             "--interpreter",
             sys.executable,
+            "--release",
         ]
     )
     return _new_artifact(target_dir, before, "*.whl")

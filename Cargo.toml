@@ -25,6 +25,9 @@ default-members = [
 ]
 resolver = "2"
 
+[profile.release]
+strip = "symbols"
+
 [workspace.package]
 version = "0.1.0"
 edition = "2024"

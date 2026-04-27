@@ -31,6 +31,7 @@ test = ["pytest>=8,<9"]
 bindings = "pyo3"
 module-name = "sagens._rust"
 python-source = "."
+exclude = ["**/__pycache__/**", "**/*.pyc"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
