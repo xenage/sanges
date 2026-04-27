@@ -71,11 +71,43 @@ pub fn sign_binary(root: &Path, binary: &Path) -> anyhow::Result<()> {
         return Ok(());
     }
     let entitlements = root.join("macos").join("sagens.entitlements");
+    sign_macos_code(root, binary, Some(&entitlements), "sagens binary")
+}
+
+pub fn sign_native_payload(root: &Path, path: &Path, host: bool) -> anyhow::Result<()> {
+    if env::consts::OS != "macos" {
+        return Ok(());
+    }
+    let entitlements = host.then(|| root.join("macos").join("sagens.entitlements"));
+    sign_macos_code(
+        root,
+        path,
+        entitlements.as_deref(),
+        if host {
+            "sagens host payload"
+        } else {
+            "Python native payload"
+        },
+    )
+}
+
+fn sign_macos_code(
+    root: &Path,
+    path: &Path,
+    entitlements: Option<&Path>,
+    description: &str,
+) -> anyhow::Result<()> {
     match SigningSettings::from_env(root)? {
-        SigningSettings::AdHoc => ad_hoc_codesign(&entitlements, binary),
+        SigningSettings::AdHoc => ad_hoc_codesign(entitlements, path, description),
         SigningSettings::DeveloperId(settings) => {
             let keychain = TempKeychain::create(root, &settings)?;
-            developer_id_codesign(keychain.identity(), keychain.path(), &entitlements, binary)
+            developer_id_codesign(
+                keychain.identity(),
+                keychain.path(),
+                entitlements,
+                path,
+                description,
+            )
         }
     }
 }
@@ -276,18 +308,18 @@ impl DeveloperIdSettings {
     }
 }
 
-fn ad_hoc_codesign(entitlements: &Path, binary: &Path) -> anyhow::Result<()> {
-    run(
-        crate::cmd::tool_command("codesign")
-            .arg("--force")
-            .arg("--sign")
-            .arg("-")
-            .arg("--entitlements")
-            .arg(entitlements)
-            .arg("--timestamp=none")
-            .arg(binary),
-        "ad-hoc codesigning sagens binary",
-    )
+fn ad_hoc_codesign(
+    entitlements: Option<&Path>,
+    path: &Path,
+    description: &str,
+) -> anyhow::Result<()> {
+    let mut command = crate::cmd::tool_command("codesign");
+    command.arg("--force").arg("--sign").arg("-");
+    if let Some(entitlements) = entitlements {
+        command.arg("--entitlements").arg(entitlements);
+    }
+    command.arg("--timestamp=none").arg(path);
+    run(&mut command, &format!("ad-hoc codesigning {description}"))
 }
 
 fn release_signing_allowed(root: &Path) -> bool {
@@ -338,23 +370,28 @@ fn git_output<const N: usize>(root: &Path, args: [&str; N]) -> Option<String> {
 fn developer_id_codesign(
     identity: &str,
     keychain: &Path,
-    entitlements: &Path,
-    binary: &Path,
+    entitlements: Option<&Path>,
+    path: &Path,
+    description: &str,
 ) -> anyhow::Result<()> {
+    let mut command = crate::cmd::tool_command("codesign");
+    command
+        .arg("--force")
+        .arg("--sign")
+        .arg(identity)
+        .arg("--keychain")
+        .arg(keychain);
+    if let Some(entitlements) = entitlements {
+        command.arg("--entitlements").arg(entitlements);
+    }
+    command
+        .arg("--options")
+        .arg("runtime")
+        .arg("--timestamp")
+        .arg(path);
     run(
-        crate::cmd::tool_command("codesign")
-            .arg("--force")
-            .arg("--sign")
-            .arg(identity)
-            .arg("--keychain")
-            .arg(keychain)
-            .arg("--entitlements")
-            .arg(entitlements)
-            .arg("--options")
-            .arg("runtime")
-            .arg("--timestamp")
-            .arg(binary),
-        "Developer ID codesigning sagens binary",
+        &mut command,
+        &format!("Developer ID codesigning {description}"),
     )
 }
 

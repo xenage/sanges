@@ -1,5 +1,5 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
 
@@ -15,6 +15,7 @@ pub(super) fn run() -> anyhow::Result<()> {
     match task.as_str() {
         "dev" => DevArgs::parse(env::args().skip(2))?.run(),
         "package" => PackageArgs::parse(env::args().skip(2))?.run(),
+        "sign-path" => SignPathArgs::parse(env::args().skip(2))?.run(),
         "-h" | "--help" | "help" => {
             print_help();
             Ok(())
@@ -26,9 +27,49 @@ pub(super) fn run() -> anyhow::Result<()> {
 fn print_help() {
     println!(
         "usage: cargo run --bin xtask -- <dev|package> [options]\n\n\
-         dev:     build a local sagens binary with embedded standalone assets\n\
-         package: build a standalone release binary with embedded assets"
+         dev:       build a local sagens binary with embedded standalone assets\n\
+         package:   build a standalone release binary with embedded assets\n\
+         sign-path: sign a macOS native payload file"
     );
+}
+
+struct SignPathArgs {
+    path: PathBuf,
+    host: bool,
+}
+
+impl SignPathArgs {
+    fn parse(args: impl Iterator<Item = String>) -> anyhow::Result<Self> {
+        let mut path = None;
+        let mut host = false;
+        let mut args = args.peekable();
+        while let Some(arg) = args.next() {
+            match arg.as_str() {
+                "--path" => {
+                    path = Some(PathBuf::from(
+                        args.next().context("missing value for --path")?,
+                    ));
+                }
+                "--host" => host = true,
+                "-h" | "--help" => {
+                    println!("usage: cargo run --bin xtask -- sign-path --path FILE [--host]");
+                    std::process::exit(0);
+                }
+                other => bail!("unknown sign-path flag: {other}"),
+            }
+        }
+        Ok(Self {
+            path: path.context("missing --path")?,
+            host,
+        })
+    }
+
+    fn run(self) -> anyhow::Result<()> {
+        let root = repo_root()?;
+        signing::sign_native_payload(&root, &absolutize(&root, Path::new(&self.path)), self.host)?;
+        println!("signed {}", self.path.display());
+        Ok(())
+    }
 }
 
 struct DevArgs {

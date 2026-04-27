@@ -182,6 +182,7 @@ jobs:
       - gate
       - build
     runs-on: ${{ matrix.os }}
+    environment: apple
     strategy:
       fail-fast: false
       matrix:
@@ -200,6 +201,15 @@ jobs:
       SAGENS_GUEST_OUTPUT_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/guest-output
       SAGENS_GUEST_WORK_DIR: ${{ github.workspace }}/.build-cache/${{ matrix.platform }}/guest-work
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+      APPLE_ID: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.APPLE_ID || '' }}
+      TEAM_ID: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.TEAM_ID || '' }}
+      BUILD_CERTIFICATE_BASE64: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.BUILD_CERTIFICATE_BASE64 || '' }}
+      KEYCHAIN_PASSWORD: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.KEYCHAIN_PASSWORD || '' }}
+      P12_PASSWORD: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.P12_PASSWORD || '' }}
+      SAGENS_FORCE_SIGN: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && '1' || '' }}
+      SAGENS_SKIP_INSTALLER: "1"
+      SAGENS_WHEEL_BUILD_TAG: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && '1' || '' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -257,15 +267,60 @@ jobs:
           test -f "$host_binary"
           test -f "$rust_ext"
           if [[ "$RUNNER_OS" == "macOS" ]]; then
-            ! otool -L "$host_binary" | grep -q 'libkrun'
-            ! otool -L "$rust_ext" | grep -q 'libkrun'
+            if otool -L "$host_binary" | grep -q 'libkrun'; then
+              echo "host binary must not dynamically link libkrun" >&2
+              exit 1
+            fi
+            if otool -L "$rust_ext" | grep -q 'libkrun'; then
+              echo "Python extension must not dynamically link libkrun" >&2
+              exit 1
+            fi
+            codesign --verify --verbose=2 --strict "$host_binary"
+            codesign --verify --verbose=2 --strict "$rust_ext"
+            codesign -d --entitlements :- "$host_binary" 2>/tmp/sagens-python-host-entitlements.plist
+            grep -q 'com.apple.security.hypervisor' /tmp/sagens-python-host-entitlements.plist
+            if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+              for target in "$host_binary" "$rust_ext"; do
+                codesign -dv --verbose=4 "$target" 2>&1 | tee /tmp/sagens-python-codesign.txt
+                if grep -Eq 'Signature=adhoc|TeamIdentifier=not set' /tmp/sagens-python-codesign.txt; then
+                  echo "macOS Python wheel payload is not Developer ID signed: $target" >&2
+                  exit 1
+                fi
+              done
+            fi
           else
-            ! ldd "$host_binary" | grep -q 'libkrun'
-            ! ldd "$rust_ext" | grep -q 'libkrun'
+            if ldd "$host_binary" | grep -q 'libkrun'; then
+              echo "host binary must not dynamically link libkrun" >&2
+              exit 1
+            fi
+            if ldd "$rust_ext" | grep -q 'libkrun'; then
+              echo "Python extension must not dynamically link libkrun" >&2
+              exit 1
+            fi
           fi
 
       - name: Run Python smoke tests
         run: python -m pytest python/tests -q --ignore=python/tests/test_e2e.py
+
+      - name: Run macOS Python standalone smoke
+        if: runner.os == 'macOS'
+        run: |
+          tmpdir="$(mktemp -d)"
+          cd "$tmpdir"
+          python - <<'PY'
+          from tempfile import TemporaryDirectory
+
+          from sagens import Daemon
+
+          with TemporaryDirectory(prefix="sagens-python-macos-smoke-") as state_dir:
+              with Daemon.start(state_dir=state_dir) as daemon:
+                  box = daemon.create_box()
+                  box.start()
+                  result = box.exec_bash("echo wheel-ok && uname -s")
+                  assert result.exit_status.success
+                  assert b"wheel-ok" in result.stdout
+                  box.stop()
+          PY
 
       - name: Upload Python wheel artifact
         uses: actions/upload-artifact@v7
@@ -424,14 +479,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Remove obsolete macOS release assets
+      - name: Remove obsolete release assets
         if: steps.verify.outputs.should_release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           asset_ids="$(
             gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
-              --jq '.assets[]? | select(.name | test("sagens-.*-macos-x86_64(\\.zip(\\.sha256)?|\\.sha256)?$|sagens-.*-macos-aarch64(\\.sha256)?$")) | .id' \
+              --jq '.assets[]? | select(.name | test("\\.whl$|sagens-.*-macos-x86_64(\\.zip(\\.sha256)?|\\.sha256)?$|sagens-.*-macos-aarch64(\\.sha256)?$")) | .id' \
               2>/dev/null || true
           )"
           if [[ -z "$asset_ids" ]]; then
