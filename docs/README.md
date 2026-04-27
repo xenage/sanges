@@ -11,6 +11,7 @@ This docs set is organized around that outcome: start a BOX, run code safely, ke
 - I want the product thesis first: [Why sagens](why-sagens.md)
 - I want the fastest CLI path: [CLI quickstart](quickstart-cli.md)
 - I want the fastest Python path: [Python quickstart](quickstart-python.md)
+- I want Python classes, types, and settings: [Python API](python-api.md)
 - I want the public nouns in one page: [Mental model](mental-model.md)
 - I want the workspace to survive restarts: [Persistent workspaces](recipes/persistent-workspaces.md)
 - I want safe rollback and branching: [Checkpoints and forks](recipes/checkpoints-and-forks.md)
@@ -55,4 +56,5 @@ The CLI is a direct way to operate the daemon and BOX lifecycle by hand. The Pyt
 
 - Start from the command line: [CLI quickstart](quickstart-cli.md)
 - Start from code: [Python quickstart](quickstart-python.md)
+- Use Python as an API: [Python API](python-api.md)
 - Understand the tradeoff: [Why sagens](why-sagens.md)
