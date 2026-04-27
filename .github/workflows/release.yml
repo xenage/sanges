@@ -93,7 +93,9 @@ jobs:
             ${{ env.CARGO_TARGET_DIR }}
             ${{ env.SAGENS_GUEST_OUTPUT_DIR }}
             ${{ env.SAGENS_GUEST_WORK_DIR }}
-          key: release-build-${{ matrix.platform }}
+          key: release-build-${{ matrix.platform }}-${{ github.sha }}
+          restore-keys: |
+            release-build-${{ matrix.platform }}-
 
       - name: Install Linux build deps
         if: runner.os == 'Linux'
@@ -233,7 +235,9 @@ jobs:
             ${{ env.CARGO_TARGET_DIR }}
             ${{ env.SAGENS_GUEST_OUTPUT_DIR }}
             ${{ env.SAGENS_GUEST_WORK_DIR }}
-          key: release-build-${{ matrix.platform }}
+          key: release-build-${{ matrix.platform }}-${{ github.sha }}
+          restore-keys: |
+            release-build-${{ matrix.platform }}-
 
       - name: Install Linux build deps
         if: runner.os == 'Linux'
