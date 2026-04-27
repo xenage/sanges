@@ -328,7 +328,7 @@ impl Default for ExecutionPolicy {
     fn default() -> Self {
         Self {
             cpu_cores: 1,
-            memory_mb: 256,
+            memory_mb: 128,
             max_processes: 256,
             network_enabled: false,
             timeout_ms: None,

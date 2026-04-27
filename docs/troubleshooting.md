@@ -39,7 +39,7 @@ sagens daemon log --tail 200
 
 When BOX startup fails, the log records the related runner and guest console log paths. That is the quickest route to the real failure.
 
-On Linux x86_64, the packaged libkrun kernel path currently needs more RAM than the tiny default. Set the BOX to at least `3584 MiB` before start if the daemon reports that the raw bundled kernel needs at least `3329 MiB`.
+The packaged runtime is expected to boot with the default `128 MiB` RAM and `128 MiB` workspace on supported hosts. If a custom kernel or rootfs fails to boot, check the runner config and guest console paths recorded in the daemon log.
 
 ### A BOX suddenly shows `failed`
 

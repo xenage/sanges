@@ -11,7 +11,7 @@ with TemporaryDirectory() as state_dir:
     with Daemon.start(state_dir=state_dir) as daemon:
         box = daemon.create_box()
 
-        # Defaults are intentionally small: 256 MiB RAM and 128 MiB workspace.
+        # Defaults are intentionally small: 128 MiB RAM and 128 MiB workspace.
         # Settings are stop-only, so set them before start or after stop.
         box.set("memory_mb", 256)
         box.set("fs_size_mib", 128)
@@ -67,7 +67,7 @@ box.set("network_enabled", False)
 box.start()
 ```
 
-`memory_mb` is RAM. `fs_size_mib` is the writable workspace disk. The read-only rootfs image that contains Python is a separate runtime artifact. The default packaged runtime is expected to boot and run commands with 256 MiB RAM and a 128 MiB workspace on supported hosts.
+`memory_mb` is RAM. `fs_size_mib` is the writable workspace disk. The read-only rootfs image that contains Python is a separate runtime artifact. The default packaged runtime is expected to boot and run Python commands with 128 MiB RAM and a 128 MiB workspace on supported hosts.
 
 ## Records and types
 
