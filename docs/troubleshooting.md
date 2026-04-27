@@ -39,7 +39,12 @@ sagens daemon log --tail 200
 
 When BOX startup fails, the log records the related runner and guest console log paths. That is the quickest route to the real failure.
 
-On linux/x86_64, the default packaged kernel uses the low-memory external-kernel path and should start with the default RAM. If you explicitly configure a raw kernel and see a message about needing at least 3329 MiB, switch back to the packaged `vmlinuz-virt.pe.gz` kernel or raise `memory_mb` for that raw-kernel BOX.
+On linux/x86_64, the bundled raw kernel currently needs more RAM than the tiny default. If the error mentions at least `3329 MiB`, set the BOX memory while it is still stopped:
+
+```bash
+sagens box set <BOX_ID> memory_mb 3584
+sagens box start <BOX_ID>
+```
 
 ### A BOX suddenly shows `failed`
 
@@ -57,7 +62,7 @@ Some settings are intentionally stop-only. Stop the BOX first, then update it:
 
 ```bash
 sagens box stop <BOX_ID>
-sagens box set <BOX_ID> memory_mb 256
+sagens box set <BOX_ID> memory_mb 2048
 ```
 
 That applies to settings such as CPU, RAM, filesystem size, process count, and network.

@@ -69,7 +69,7 @@ box.start()
 
 `memory_mb` is RAM. `fs_size_mib` is the writable workspace disk. The read-only rootfs image that contains Python is a separate runtime artifact.
 
-On linux/x86_64, packaged builds use `vmlinuz-virt.pe.gz` so the default `128 MiB` RAM path does not hit the raw-kernel 3.5 GiB layout requirement. If you explicitly configure a raw kernel, the backend may reject low memory and ask for at least `3329 MiB`.
+On linux/x86_64, the bundled raw kernel currently needs more RAM than the tiny default. If the backend asks for at least `3329 MiB`, set `memory_mb` to `3584` before `box.start()`.
 
 ## Records and types
 

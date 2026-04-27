@@ -215,12 +215,6 @@ fn default_project_artifact_candidates(kind: ProjectArtifactKind) -> Vec<PathBuf
 }
 
 fn default_kernel_candidates(guest_dir: &Path) -> Vec<PathBuf> {
-    if env::consts::OS == "linux" && env::consts::ARCH == "x86_64" {
-        return vec![
-            guest_dir.join("vmlinuz-virt.pe.gz"),
-            guest_dir.join("vmlinuz-virt"),
-        ];
-    }
     vec![guest_dir.join("vmlinuz-virt")]
 }
 

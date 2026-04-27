@@ -302,7 +302,7 @@ jobs:
       - name: Run Python smoke tests
         run: python -m pytest python/tests -q --ignore=python/tests/test_e2e.py
 
-      - name: Run macOS Python standalone smoke
+      - name: Run macOS Python standalone daemon smoke
         if: runner.os == 'macOS'
         run: |
           tmpdir="$(mktemp -d)"
@@ -313,6 +313,23 @@ jobs:
           from sagens import Daemon
 
           with TemporaryDirectory(prefix="sagens-python-macos-smoke-") as state_dir:
+              with Daemon.start(state_dir=state_dir) as daemon:
+                  box = daemon.create_box()
+                  assert str(box.box_id)
+                  assert daemon.get_box(box.box_id).box_id == box.box_id
+          PY
+
+      - name: Run macOS Python standalone BOX smoke
+        if: runner.os == 'macOS' && env.SAGENS_RUN_MACOS_REAL_BOX_SMOKE == '1'
+        run: |
+          tmpdir="$(mktemp -d)"
+          cd "$tmpdir"
+          python - <<'PY'
+          from tempfile import TemporaryDirectory
+
+          from sagens import Daemon
+
+          with TemporaryDirectory(prefix="sagens-python-macos-box-smoke-") as state_dir:
               with Daemon.start(state_dir=state_dir) as daemon:
                   box = daemon.create_box()
                   box.start()

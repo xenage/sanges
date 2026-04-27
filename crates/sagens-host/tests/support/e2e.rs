@@ -87,12 +87,6 @@ pub fn guest_assets() -> GuestAssets {
 }
 
 fn default_kernel_path(guest_dir: &Path) -> PathBuf {
-    if std::env::consts::OS == "linux" && std::env::consts::ARCH == "x86_64" {
-        let compressed = guest_dir.join("vmlinuz-virt.pe.gz");
-        if compressed.is_file() {
-            return compressed;
-        }
-    }
     guest_dir.join("vmlinuz-virt")
 }
 

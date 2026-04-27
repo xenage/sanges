@@ -127,7 +127,7 @@ fn discover_default_manifest(repo_root: &Path) -> Option<EmbedManifest> {
         _ => return None,
     };
     let guest_dir = repo_root.join("artifacts").join(platform.1);
-    let kernel = default_kernel_candidate(&guest_dir, target_os.as_str(), target_arch.as_str());
+    let kernel = guest_dir.join("vmlinuz-virt");
     let rootfs = guest_dir.join("rootfs.raw");
     let firmware = match target_os.as_str() {
         "macos" => Some(
@@ -163,16 +163,6 @@ fn discover_default_manifest(repo_root: &Path) -> Option<EmbedManifest> {
         rootfs,
         firmware,
     })
-}
-
-fn default_kernel_candidate(guest_dir: &Path, target_os: &str, target_arch: &str) -> PathBuf {
-    if target_os == "linux" && target_arch == "x86_64" {
-        let compressed = guest_dir.join("vmlinuz-virt.pe.gz");
-        if compressed.is_file() {
-            return compressed;
-        }
-    }
-    guest_dir.join("vmlinuz-virt")
 }
 
 fn render_required_asset(name: &str, path: &Path, out_dir: &Path) -> String {
