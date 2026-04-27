@@ -11,7 +11,11 @@ const PREBUILT_VERSION: &str = "v5.2.0";
 const PREBUILT_X86_64_ARCHIVE: &str = "libkrunfw-x86_64.tgz";
 const PREBUILT_X86_64_URL: &str =
     "https://github.com/containers/libkrunfw/releases/download/v5.2.0/libkrunfw-x86_64.tgz";
+const PREBUILT_AARCH64_ARCHIVE: &str = "libkrunfw-aarch64.tgz";
+const PREBUILT_AARCH64_URL: &str =
+    "https://github.com/containers/libkrunfw/releases/download/v5.2.0/libkrunfw-aarch64.tgz";
 const X86_64_LIBRARY_PATH: &str = "lib64/libkrunfw.so.5.2.0";
+const AARCH64_LIBRARY_PATH: &str = "lib64/libkrunfw.so.5.2.0";
 const KERNEL_BUNDLE_SYMBOL: &str = "KERNEL_BUNDLE";
 const KERNEL_OUTPUT: &str = "vmlinuz-virt";
 
@@ -19,15 +23,42 @@ pub(super) fn materialize_linux_x86_64_guest_kernel(
     work_dir: &Path,
     output_dir: &Path,
 ) -> anyhow::Result<()> {
-    let archive_path = cached_prebuilt_archive(
+    materialize_prebuilt_guest_kernel(
         work_dir,
         "libkrunfw-x86_64",
         PREBUILT_X86_64_ARCHIVE,
         PREBUILT_X86_64_URL,
-    )?;
+        X86_64_LIBRARY_PATH,
+        output_dir,
+    )
+}
+
+pub(super) fn materialize_aarch64_guest_kernel(
+    work_dir: &Path,
+    output_dir: &Path,
+) -> anyhow::Result<()> {
+    materialize_prebuilt_guest_kernel(
+        work_dir,
+        "libkrunfw-aarch64",
+        PREBUILT_AARCH64_ARCHIVE,
+        PREBUILT_AARCH64_URL,
+        AARCH64_LIBRARY_PATH,
+        output_dir,
+    )
+}
+
+fn materialize_prebuilt_guest_kernel(
+    work_dir: &Path,
+    cache_key: &str,
+    archive_name: &str,
+    archive_url: &str,
+    library_path: &str,
+    output_dir: &Path,
+) -> anyhow::Result<()> {
+    let archive_path = cached_prebuilt_archive(work_dir, cache_key, archive_name, archive_url)?;
     let extract_dir = tempdir().context("creating libkrunfw extraction directory")?;
-    extract_archive_member(&archive_path, X86_64_LIBRARY_PATH, extract_dir.path())?;
-    let kernel = parse_kernel_bundle_elf(&extract_dir.path().join(X86_64_LIBRARY_PATH))?;
+    extract_archive_member(&archive_path, library_path, extract_dir.path())?;
+    let kernel = parse_kernel_bundle_elf(&extract_dir.path().join(library_path))?;
 
     fs::create_dir_all(output_dir).with_context(|| format!("creating {}", output_dir.display()))?;
     fs::write(output_dir.join(KERNEL_OUTPUT), kernel)

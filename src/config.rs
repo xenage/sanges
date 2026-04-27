@@ -137,7 +137,10 @@ impl GuestKernelFormat {
         // compressed kernel image deeper in the file.
         if probe.starts_with(b"MZ") {
             if probe.windows(3).any(|window| window == [0x1f, 0x8b, 0x08]) {
-                return Self::ImageGz;
+                if cfg!(target_arch = "x86_64") {
+                    return Self::ImageGz;
+                }
+                return Self::PeGz;
             }
             if probe.windows(3).any(|window| window == *b"BZh") {
                 return Self::ImageBz2;

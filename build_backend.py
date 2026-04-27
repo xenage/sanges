@@ -84,7 +84,6 @@ def _stage_host_binary(config_settings: dict[str, object] | None) -> None:
         "--",
         "dev",
         "--release",
-        "--skip-guest-refresh",
         "--python-package-root",
         "python",
     ]

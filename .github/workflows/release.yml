@@ -211,7 +211,7 @@ jobs:
       P12_PASSWORD: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.P12_PASSWORD || '' }}
       SAGENS_FORCE_SIGN: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && '1' || '' }}
       SAGENS_SKIP_INSTALLER: "1"
-      SAGENS_WHEEL_BUILD_TAG: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && '2' || '' }}
+      SAGENS_WHEEL_BUILD_TAG: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && '3' || '' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -312,6 +312,7 @@ jobs:
           tmpdir="$(mktemp -d)"
           cd "$tmpdir"
           python - <<'PY'
+          from pathlib import Path
           from tempfile import TemporaryDirectory
 
           from sagens import Daemon
@@ -321,6 +322,8 @@ jobs:
                   box = daemon.create_box()
                   assert str(box.box_id)
                   assert daemon.get_box(box.box_id).box_id == box.box_id
+                  kernel = Path(state_dir) / "embedded-bundle" / "sagens" / "vmlinuz-virt"
+                  assert kernel.read_bytes()[0x38:0x3c] == b"ARMd"
           PY
 
       - name: Run macOS Python standalone BOX smoke

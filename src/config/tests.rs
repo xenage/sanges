@@ -79,9 +79,14 @@ fn rejects_secure_mode_without_cgroup_parent() {
 #[test]
 fn detects_gzip_wrapped_x86_kernel_probe() {
     let probe = b"MZ\x00\x00padding\x1f\x8b\x08";
+    let expected = if cfg!(target_arch = "x86_64") {
+        GuestKernelFormat::ImageGz
+    } else {
+        GuestKernelFormat::PeGz
+    };
     assert_eq!(
         GuestKernelFormat::detect_from_probe(probe, GuestKernelFormat::Raw),
-        GuestKernelFormat::ImageGz
+        expected
     );
 }
 
@@ -93,9 +98,14 @@ fn detects_gzip_wrapped_x86_kernel_beyond_small_header() {
     kernel[17_092..17_095].copy_from_slice(&[0x1f, 0x8b, 0x08]);
     std::fs::write(temp.path(), kernel).expect("write temp kernel");
 
+    let expected = if cfg!(target_arch = "x86_64") {
+        GuestKernelFormat::ImageGz
+    } else {
+        GuestKernelFormat::PeGz
+    };
     assert_eq!(
         GuestKernelFormat::detect_from_path(temp.path(), GuestKernelFormat::Raw),
-        GuestKernelFormat::ImageGz
+        expected
     );
 }
 

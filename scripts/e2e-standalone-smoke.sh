@@ -107,6 +107,23 @@ assert_contains() {
   fi
 }
 
+assert_macos_embedded_kernel_not_pe() {
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    return
+  fi
+  local kernel="$STATE_DIR/embedded-bundle/sagens/vmlinuz-virt"
+  python3 - "$kernel" <<'PY'
+from pathlib import Path
+import sys
+
+kernel = Path(sys.argv[1])
+if not kernel.is_file():
+    raise SystemExit(f"missing embedded kernel: {kernel}")
+if kernel.read_bytes()[0x38:0x3c] != b"ARMd":
+    raise SystemExit(f"macOS embedded kernel must be a raw ARM64 Image: {kernel}")
+PY
+}
+
 extract_first_uuid() {
   python3 -c '
 import re
@@ -137,6 +154,7 @@ for raw_line in text.splitlines():
 
 START_OUT="$(e2e_run_capture "Start daemon" "sagens start" run_sagens start)"
 assert_contains "$START_OUT" "daemon "
+assert_macos_embedded_kernel_not_pe
 
 HELP_OUT="$(e2e_run_capture "Show CLI help" "sagens" run_sagens)"
 assert_contains "$HELP_OUT" "sagens <command> [args]"

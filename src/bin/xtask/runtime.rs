@@ -56,6 +56,9 @@ pub(super) fn build_guest_artifacts(
     ) {
         libkrunfw_kernel::materialize_linux_x86_64_guest_kernel(&work_dir, &output_dir)?;
     }
+    if platform.arch == PlatformArch::Aarch64 {
+        libkrunfw_kernel::materialize_aarch64_guest_kernel(&work_dir, &output_dir)?;
+    }
     Ok(())
 }
 
