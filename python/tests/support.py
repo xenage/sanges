@@ -18,8 +18,6 @@ from sagens._box import Box
 from sagens._decode import user_config_from_dict
 from sagens import _rust
 
-LINUX_X86_64_E2E_MEMORY_MB = 3584
-
 
 @contextmanager
 def smoke_server(mode: str = "compat") -> Iterator[Daemon]:
@@ -76,27 +74,7 @@ def real_box_runtime_supported() -> bool:
 
 
 def create_e2e_box(daemon: Daemon) -> Box:
-    box = daemon.create_box()
-    required_memory_mb = required_e2e_box_memory_mb()
-    if required_memory_mb is None:
-        return box
-    settings = box.record.settings
-    if settings is None:
-        raise RuntimeError("BOX settings are missing from the daemon response")
-    if settings.memory_mb.max < required_memory_mb:
-        raise RuntimeError(
-            f"full python e2e requires memory_mb={required_memory_mb}, but host cap is "
-            f"{settings.memory_mb.max}"
-        )
-    if settings.memory_mb.current < required_memory_mb:
-        box.set("memory_mb", required_memory_mb)
-    return box
-
-
-def required_e2e_box_memory_mb() -> int | None:
-    if sys.platform == "linux" and platform.machine() == "x86_64":
-        return LINUX_X86_64_E2E_MEMORY_MB
-    return None
+    return daemon.create_box()
 
 
 @contextmanager

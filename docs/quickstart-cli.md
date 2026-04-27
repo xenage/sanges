@@ -16,9 +16,6 @@ BIN="$(find ./dist -maxdepth 1 -type f -name 'sagens-local-*' | head -n 1)"
 # Copy the BOX ID from the table above.
 BOX_ID=<box-id>
 
-# Linux x86_64 raw-kernel hosts currently need a larger BOX before first boot.
-# "$BIN" box set "$BOX_ID" memory_mb 3584
-
 "$BIN" box start "$BOX_ID"
 "$BIN" box exec "$BOX_ID" bash "printf 'hello from the box\n' > /workspace/hello.txt && uname -s"
 "$BIN" box fs "$BOX_ID" ls /workspace

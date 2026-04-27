@@ -22,7 +22,6 @@ from sagens import Daemon
 from sagens._binary import resolve_host_binary
 
 HELLO_PYTHON_ARGS = ["-c", "print('hello from python')"]
-LINUX_X86_64_BENCH_MEMORY_MB = 3584
 
 
 @dataclass(frozen=True)
@@ -77,11 +76,7 @@ def log(message: str) -> None:
 
 
 def benchmark_memory_mb(override: int | None) -> int | None:
-    if override is not None:
-        return override
-    if sys.platform == "linux" and platform.machine() == "x86_64":
-        return LINUX_X86_64_BENCH_MEMORY_MB
-    return None
+    return override
 
 
 def ensure_box_memory(box: Any, memory_mb: int | None) -> int | None:

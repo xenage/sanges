@@ -7,6 +7,8 @@ use std::time::Duration;
 
 use crate::{Result, SandboxError};
 
+const KERNEL_FORMAT_PROBE_BYTES: usize = 64 * 1024;
+
 #[cfg(test)]
 #[path = "config/tests.rs"]
 mod tests;
@@ -120,7 +122,7 @@ impl GuestKernelFormat {
         let Ok(mut file) = File::open(path) else {
             return fallback;
         };
-        let mut probe = [0u8; 8192];
+        let mut probe = [0u8; KERNEL_FORMAT_PROBE_BYTES];
         let Ok(read) = file.read(&mut probe) else {
             return fallback;
         };
@@ -152,7 +154,7 @@ impl GuestKernelFormat {
 
     fn detect_from_file_name(path: &Path) -> Option<Self> {
         let file_name = path.file_name()?.to_str()?.to_ascii_lowercase();
-        if file_name.ends_with(".pe.gz") {
+        if file_name.ends_with(".pe.gz") && !cfg!(target_arch = "x86_64") {
             return Some(Self::PeGz);
         }
         None

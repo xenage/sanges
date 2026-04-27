@@ -1,11 +1,8 @@
 use std::fs;
-use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 
 use anyhow::{Context, ensure};
-use flate2::Compression;
-use flate2::write::GzEncoder;
 use reqwest::blocking::Client;
 use sequoia_openpgp as openpgp;
 use sequoia_openpgp::cert::CertParser;
@@ -91,9 +88,6 @@ impl Builder {
             .context("linux-virt package missing from resolved package set")?;
         let kernel_path = output_dir.join("vmlinuz-virt");
         extract_kernel(&apk_dir, kernel_package, &kernel_path)?;
-        if args.arch == "x86_64" {
-            write_gzip_copy(&kernel_path, &output_dir.join("vmlinuz-virt.pe.gz"))?;
-        }
         build_ext4_image(
             &rootfs_dir,
             &output_dir.join("rootfs.raw"),
@@ -137,18 +131,4 @@ impl Builder {
             .with_context(|| format!("writing {}", destination.display()))?;
         Ok(())
     }
-}
-
-fn write_gzip_copy(source: &Path, destination: &Path) -> anyhow::Result<()> {
-    let bytes = fs::read(source).with_context(|| format!("reading {}", source.display()))?;
-    let output = fs::File::create(destination)
-        .with_context(|| format!("creating {}", destination.display()))?;
-    let mut encoder = GzEncoder::new(output, Compression::best());
-    encoder
-        .write_all(&bytes)
-        .with_context(|| format!("compressing {}", source.display()))?;
-    encoder
-        .finish()
-        .with_context(|| format!("finishing {}", destination.display()))?;
-    Ok(())
 }

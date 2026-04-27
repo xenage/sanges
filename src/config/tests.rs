@@ -86,13 +86,32 @@ fn detects_gzip_wrapped_x86_kernel_probe() {
 }
 
 #[test]
+fn detects_gzip_wrapped_x86_kernel_beyond_small_header() {
+    let temp = tempfile::NamedTempFile::new().expect("temp kernel");
+    let mut kernel = vec![0; 20 * 1024];
+    kernel[..2].copy_from_slice(b"MZ");
+    kernel[17_092..17_095].copy_from_slice(&[0x1f, 0x8b, 0x08]);
+    std::fs::write(temp.path(), kernel).expect("write temp kernel");
+
+    assert_eq!(
+        GuestKernelFormat::detect_from_path(temp.path(), GuestKernelFormat::Raw),
+        GuestKernelFormat::ImageGz
+    );
+}
+
+#[test]
 fn detects_pe_gzip_kernel_from_file_name() {
+    let expected = if cfg!(target_arch = "x86_64") {
+        GuestKernelFormat::Raw
+    } else {
+        GuestKernelFormat::PeGz
+    };
     assert_eq!(
         GuestKernelFormat::detect_from_path(
             std::path::Path::new("/box/vmlinuz-virt.pe.gz"),
             GuestKernelFormat::Raw,
         ),
-        GuestKernelFormat::PeGz
+        expected
     );
 }
 
