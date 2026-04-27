@@ -209,7 +209,7 @@ jobs:
       P12_PASSWORD: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && secrets.P12_PASSWORD || '' }}
       SAGENS_FORCE_SIGN: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && '1' || '' }}
       SAGENS_SKIP_INSTALLER: "1"
-      SAGENS_WHEEL_BUILD_TAG: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && '1' || '' }}
+      SAGENS_WHEEL_BUILD_TAG: ${{ startsWith(matrix.os, 'macos-') && startsWith(github.ref, 'refs/tags/') && '2' || '' }}
     steps:
       - uses: actions/checkout@v6
         with:

@@ -124,6 +124,6 @@ fn falls_back_when_probe_is_unknown() {
 }
 
 #[test]
-fn execution_policy_defaults_to_low_memory_box() {
-    assert_eq!(SandboxPolicy::default().memory_mb, 128);
+fn execution_policy_defaults_to_compact_box() {
+    assert_eq!(SandboxPolicy::default().memory_mb, 256);
 }

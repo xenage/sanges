@@ -35,7 +35,7 @@ pub(super) fn default_box_settings() -> BoxSettings {
     BoxSettings {
         cpu_cores: BoxNumericSetting { current: 1, max: 8 },
         memory_mb: BoxNumericSetting {
-            current: 128,
+            current: 256,
             max: 8192,
         },
         fs_size_mib: BoxNumericSetting {
