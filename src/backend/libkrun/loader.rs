@@ -102,7 +102,7 @@ impl Libkrun {
                 "krun_set_firmware",
             )?;
         }
-        if !config.uses_krun_init() || linux_x86_64_raw_kernel_file(config) {
+        if !config.uses_krun_init() {
             let kernel_image = kernel_image_for_libkrun(config)?;
             let kernel = to_cstring(&kernel_image)?;
             let cmdline = CString::new(config.kernel_cmdline())
@@ -209,11 +209,6 @@ impl PreparedMicrovm {
         }
         Ok(())
     }
-}
-
-fn linux_x86_64_raw_kernel_file(config: &LibkrunRunnerConfig) -> bool {
-    cfg!(all(target_os = "linux", target_arch = "x86_64"))
-        && config.kernel_format == crate::config::GuestKernelFormat::Raw
 }
 
 impl Drop for PreparedMicrovm {
