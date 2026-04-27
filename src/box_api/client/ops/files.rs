@@ -3,7 +3,7 @@ use base64::Engine as _;
 use super::super::BoxApiClient;
 use crate::Result;
 use crate::box_api::protocol::{BoxRequest, BoxResponse};
-use crate::workspace::{FileNode, ReadFileResult, WorkspaceChange};
+use crate::workspace::{FileNode, ReadFileResult};
 
 impl BoxApiClient {
     pub async fn list_files(&self, box_id: uuid::Uuid, path: String) -> Result<Vec<FileNode>> {
@@ -86,18 +86,6 @@ impl BoxApiClient {
             path,
             recursive,
         })
-        .await
-    }
-
-    pub async fn list_changes(&self, box_id: uuid::Uuid) -> Result<Vec<WorkspaceChange>> {
-        let request_id = self.next_request_id();
-        self.request_response(
-            BoxRequest::FsDiff { request_id, box_id },
-            |response| match response {
-                BoxResponse::Changes { changes } => Some(changes),
-                _ => None,
-            },
-        )
         .await
     }
 }

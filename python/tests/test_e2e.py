@@ -66,7 +66,7 @@ def test_box_shell_and_fs_roundtrip() -> None:
             box.fs.write("/workspace/roundtrip.txt", b"fs-e2e")
             box.fs.download("/workspace/roundtrip.txt", downloaded)
             assert downloaded.read_bytes() == b"fs-e2e"
-            assert any(change.path == "roundtrip.txt" for change in box.fs.diff())
+            assert any(entry.path == "roundtrip.txt" for entry in box.fs.list())
 
             shell = box.open_bash()
             shell.send_input("printf 'shell-e2e\\n'\nexit\n")

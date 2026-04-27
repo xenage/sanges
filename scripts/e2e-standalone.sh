@@ -254,10 +254,6 @@ e2e_log_value "downloaded note" "$READ_OUT"
 LS_OUT="$(e2e_run_capture "List BOX workspace" "sagens box fs $BOX_ID ls /workspace" run_sagens box fs "$BOX_ID" ls /workspace)"
 assert_contains "$LS_OUT" "note.txt"
 
-DIFF_OUT="$(e2e_run_capture "Show BOX diff" "sagens box fs $BOX_ID diff" run_sagens box fs "$BOX_ID" diff)"
-assert_contains "$DIFF_OUT" "A"
-assert_contains "$DIFF_OUT" "note.txt"
-
 ADMIN_ADD_OUT="$(e2e_run_capture "Create admin credential" "sagens admin add" run_sagens admin add)"
 assert_contains "$ADMIN_ADD_OUT" "Admin UUID"
 assert_contains "$ADMIN_ADD_OUT" "Admin token"

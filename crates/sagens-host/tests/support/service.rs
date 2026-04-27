@@ -12,8 +12,8 @@ use sagens_host::protocol::{
     CommandStream, ExecExit, ExecRequest, ExecutionEvent, OutputStream, ShellEvent, ShellRequest,
 };
 use sagens_host::workspace::{
-    CheckpointRestoreMode, FileKind, FileNode, ReadFileResult, WorkspaceChange,
-    WorkspaceChangeKind, WorkspaceCheckpointRecord, WorkspaceCheckpointSummary,
+    CheckpointRestoreMode, FileKind, FileNode, ReadFileResult, WorkspaceCheckpointRecord,
+    WorkspaceCheckpointSummary,
 };
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -21,6 +21,7 @@ use uuid::Uuid;
 use super::spawn::StubShellDriver;
 use checkpoints::{
     apply_snapshot, capture_snapshot, checkpoint_exists, remove_box_state, rollback_checkpoints,
+    workspace_changes,
 };
 use records::new_box_record;
 use state::default_box_settings;
@@ -91,17 +92,6 @@ impl BoxManager for StubBoxManager {
         Ok(())
     }
 
-    async fn list_changes(&self, box_id: Uuid) -> sagens_host::Result<Vec<WorkspaceChange>> {
-        Ok(self
-            .state
-            .lock()
-            .await
-            .changes
-            .get(&box_id)
-            .cloned()
-            .unwrap_or_default())
-    }
-
     async fn list_files(&self, box_id: Uuid, _: &str) -> sagens_host::Result<Vec<FileNode>> {
         Ok(self
             .state
@@ -152,14 +142,6 @@ impl BoxManager for StubBoxManager {
                 target: None,
             }],
         );
-        state.changes.insert(
-            box_id,
-            vec![WorkspaceChange {
-                path: path.trim_start_matches("/workspace/").into(),
-                kind: WorkspaceChangeKind::Added,
-                kind_after: Some(FileKind::File),
-            }],
-        );
         Ok(())
     }
 
@@ -180,14 +162,6 @@ impl BoxManager for StubBoxManager {
         }
         drop(running);
         let mut state = self.state.lock().await;
-        state.changes.insert(
-            box_id,
-            vec![WorkspaceChange {
-                path: "tracked.txt".into(),
-                kind: WorkspaceChangeKind::Added,
-                kind_after: Some(FileKind::File),
-            }],
-        );
         state.files.insert(
             box_id,
             vec![FileNode {
@@ -252,6 +226,7 @@ impl BoxManager for StubBoxManager {
         state.committed += 1;
         let checkpoint_id = format!("checkpoint-{}", state.committed);
         let source_checkpoint_id = state.checkpoint_heads.get(&box_id).cloned();
+        let snapshot = capture_snapshot(&state, box_id);
         let checkpoint = WorkspaceCheckpointRecord {
             summary: WorkspaceCheckpointSummary {
                 checkpoint_id: checkpoint_id.clone(),
@@ -261,14 +236,13 @@ impl BoxManager for StubBoxManager {
                 created_at_ms: 10 + state.committed,
             },
             source_checkpoint_id,
-            changes: state.changes.get(&box_id).cloned().unwrap_or_default(),
+            changes: workspace_changes(&snapshot),
         };
         state
             .checkpoints
             .entry(box_id)
             .or_default()
             .push(checkpoint.clone());
-        let snapshot = capture_snapshot(&state, box_id);
         state
             .checkpoint_snapshots
             .insert((box_id, checkpoint_id.clone()), snapshot);

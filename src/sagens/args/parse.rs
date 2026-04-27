@@ -188,11 +188,9 @@ fn parse_box_fs(mut args: Vec<String>) -> Result<Command> {
                 render_usage_hint(HelpTopic::BoxFsDownload).as_str(),
             )?,
         },
-        "diff" if help_only(&args) => return Ok(Command::Help(HelpTopic::BoxFsDiff)),
-        "diff" => super::FsCommand::Diff { box_id },
         other => {
             return Err(SandboxError::invalid(format!(
-                "unsupported fs command {other}; expected ls|upload|download|diff"
+                "unsupported fs command {other}; expected ls|upload|download"
             )));
         }
     };

@@ -5,11 +5,10 @@ use uuid::Uuid;
 use crate::host_log;
 use crate::{Result, SandboxError};
 
-use super::service::{BoxManager, LocalBoxService};
+use super::service::LocalBoxService;
 use super::{
     BoxBooleanSetting, BoxNumericSetting, BoxRecord, BoxRuntimeUsage, BoxSettings, BoxStatus,
 };
-
 impl LocalBoxService {
     pub(super) async fn reconcile_after_restart(&self) -> Result<()> {
         for record in self.boxes.list().await? {
@@ -78,7 +77,8 @@ impl LocalBoxService {
             None => self.active.read().await.get(&record.box_id).copied(),
         };
         let Some(sandbox_id) = sandbox_id else {
-            self.mark_stopped(record).await?;
+            self.set_failed(record, missing_runtime_state_message(box_id))
+                .await?;
             return self.read_box(box_id).await;
         };
         match self.runtime.runtime_stats(sandbox_id).await {
@@ -87,7 +87,8 @@ impl LocalBoxService {
                 Ok(record)
             }
             Err(error) if missing_runtime_session(&error) => {
-                self.mark_stopped(record).await?;
+                self.set_failed(record, missing_runtime_session_message(box_id))
+                    .await?;
                 self.read_box(box_id).await
             }
             Err(error) => {
@@ -104,12 +105,17 @@ impl LocalBoxService {
                 "BOX {box_id} is not running"
             )));
         }
-        self.active
-            .read()
-            .await
-            .get(&box_id)
-            .copied()
-            .ok_or_else(|| SandboxError::backend(format!("BOX {box_id} is missing runtime state")))
+        let sandbox_id = match record.active_sandbox_id {
+            Some(sandbox_id) => Some(sandbox_id),
+            None => self.active.read().await.get(&box_id).copied(),
+        };
+        let Some(sandbox_id) = sandbox_id else {
+            let message = missing_runtime_state_message(box_id);
+            self.set_failed(record, message.clone()).await?;
+            return Err(SandboxError::backend(message));
+        };
+        self.active.write().await.insert(box_id, sandbox_id);
+        Ok(sandbox_id)
     }
 
     pub(super) async fn set_failed(&self, mut record: BoxRecord, message: String) -> Result<()> {
@@ -148,19 +154,33 @@ impl LocalBoxService {
 
     pub(super) async fn ensure_runtime(&self, box_id: Uuid) -> Result<Uuid> {
         let record = self.read_box(box_id).await?;
-        if record.status == BoxStatus::Running {
-            if let Some(sandbox_id) = record.active_sandbox_id {
-                self.active.write().await.insert(box_id, sandbox_id);
-                if self.runtime.touch_session(sandbox_id).await.is_ok() {
-                    return Ok(sandbox_id);
-                }
-            }
-            self.mark_stopped(record).await?;
+        if record.status != BoxStatus::Running {
+            return Err(SandboxError::conflict(format!(
+                "BOX {box_id} is not running; start it first"
+            )));
         }
-        let record = self.start_box(box_id).await?;
-        record.active_sandbox_id.ok_or_else(|| {
-            SandboxError::backend(format!("BOX {box_id} started without an active sandbox"))
-        })
+        let sandbox_id = match record.active_sandbox_id {
+            Some(sandbox_id) => Some(sandbox_id),
+            None => self.active.read().await.get(&box_id).copied(),
+        };
+        let Some(sandbox_id) = sandbox_id else {
+            let message = missing_runtime_state_message(box_id);
+            self.set_failed(record, message.clone()).await?;
+            return Err(SandboxError::backend(message));
+        };
+        self.active.write().await.insert(box_id, sandbox_id);
+        match self.runtime.runtime_stats(sandbox_id).await {
+            Ok(_) => Ok(sandbox_id),
+            Err(error) if missing_runtime_session(&error) => {
+                let message = missing_runtime_session_message(box_id);
+                self.set_failed(record, message.clone()).await?;
+                Err(SandboxError::backend(message))
+            }
+            Err(error) => {
+                self.set_failed(record, error.to_string()).await?;
+                Err(error)
+            }
+        }
     }
 
     pub(super) async fn stop_box_for_shutdown(&self, box_id: Uuid) -> Result<()> {
@@ -179,10 +199,6 @@ impl LocalBoxService {
                 }
             },
         };
-        if self.runtime.touch_session(sandbox_id).await.is_err() {
-            self.mark_stopped(record).await?;
-            return Ok(());
-        }
         self.active.write().await.insert(box_id, sandbox_id);
         match self.runtime.destroy_sandbox(sandbox_id).await {
             Ok(_) => self.mark_stopped(record).await,
@@ -359,13 +375,21 @@ fn detect_available_disk_mib(_: &std::path::Path) -> Option<u64> {
     None
 }
 
-fn missing_runtime_session(error: &SandboxError) -> bool {
+pub(super) fn missing_runtime_session(error: &SandboxError) -> bool {
     match error {
         SandboxError::InvalidConfig(message) | SandboxError::Backend(message) => {
             message.contains("unknown active sandbox")
         }
         _ => false,
     }
+}
+
+fn missing_runtime_state_message(box_id: Uuid) -> String {
+    format!("BOX {box_id} is marked running but has no active sandbox; start it again")
+}
+
+fn missing_runtime_session_message(box_id: Uuid) -> String {
+    format!("BOX {box_id} runtime is no longer available; start it again")
 }
 
 pub(super) fn now_ms() -> u64 {

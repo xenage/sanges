@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 use tokio::sync::{Mutex, OwnedSemaphorePermit, RwLock, Semaphore};
 use uuid::Uuid;
@@ -102,30 +101,6 @@ impl SessionRegistry {
             .insert(record.summary.sandbox_id, record);
     }
 
-    pub(super) async fn note_activity(&self, sandbox_id: Uuid) -> Result<()> {
-        let session = self
-            .inner
-            .active
-            .read()
-            .await
-            .get(&sandbox_id)
-            .cloned()
-            .ok_or_else(|| SandboxError::invalid(format!("unknown active sandbox {sandbox_id}")))?;
-        session.touch().await;
-        Ok(())
-    }
-
-    pub(super) async fn idle_candidates(&self, idle_timeout: Duration) -> Vec<Uuid> {
-        let mut ids = Vec::new();
-        let active = self.inner.active.read().await;
-        for (sandbox_id, session) in active.iter() {
-            if session.is_idle_for(idle_timeout) {
-                ids.push(*sandbox_id);
-            }
-        }
-        ids
-    }
-
     pub(super) async fn take_warm_run(&self) -> Option<RunLayout> {
         self.inner.warm_runs.lock().await.pop()
     }
@@ -146,7 +121,6 @@ pub(super) struct ManagedSandbox {
     pub(super) workspace: WorkspaceLease,
     pub(super) backend: Arc<dyn BackendInstance>,
     pub(super) guest: GuestRpcClient,
-    last_activity: Mutex<Instant>,
     exec_gate: Arc<Semaphore>,
 }
 
@@ -166,7 +140,6 @@ impl ManagedSandbox {
             workspace,
             backend,
             guest,
-            last_activity: Mutex::new(Instant::now()),
             exec_gate: Arc::new(Semaphore::new(1)),
         }
     }
@@ -175,24 +148,9 @@ impl ManagedSandbox {
         self.guest.snapshot_workspace().await
     }
 
-    pub(super) async fn touch(&self) {
-        *self.last_activity.lock().await = Instant::now();
-    }
-
     pub(super) fn try_acquire_exec(&self) -> Result<OwnedSemaphorePermit> {
         self.exec_gate.clone().try_acquire_owned().map_err(|_| {
             SandboxError::conflict("parallel exec is not supported for a running BOX".to_string())
         })
-    }
-
-    fn is_idle_for(&self, idle_timeout: Duration) -> bool {
-        if self.exec_gate.available_permits() == 0 {
-            return false;
-        }
-        if let Ok(last_activity) = self.last_activity.try_lock() {
-            last_activity.elapsed() >= idle_timeout
-        } else {
-            false
-        }
     }
 }

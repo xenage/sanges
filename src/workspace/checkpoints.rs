@@ -159,8 +159,10 @@ impl WorkspaceStore {
         workspace: &WorkspaceLease,
         baseline: &WorkspaceSnapshot,
         current: &WorkspaceSnapshot,
+        name: Option<String>,
+        metadata: BTreeMap<String, String>,
     ) -> Result<WorkspaceCommitRecord> {
-        self.create_checkpoint(workspace, baseline.diff(current), None, BTreeMap::new())
+        self.create_checkpoint(workspace, baseline.diff(current), name, metadata)
             .await
     }
 

@@ -15,12 +15,11 @@ use crate::host_log;
 use crate::protocol::{CommandStream, ExecRequest, ShellRequest};
 use crate::runtime::SandboxService;
 use crate::workspace::{
-    CheckpointRestoreMode, FileNode, ReadFileResult, WorkspaceChange, WorkspaceCheckpointRecord,
-    WorkspaceStore,
+    CheckpointRestoreMode, FileNode, ReadFileResult, WorkspaceCheckpointRecord, WorkspaceStore,
 };
 use crate::{Result, SandboxError, WorkspaceConfig};
 
-use super::helpers::now_ms;
+use super::helpers::{missing_runtime_session, now_ms};
 use super::{BoxRecord, BoxSettingValue, BoxStatus, BoxStore};
 use policy::{box_policy, validate_numeric_setting};
 
@@ -173,6 +172,10 @@ impl BoxManager for LocalBoxService {
                 self.boxes.write(&record).await?;
                 Ok(record)
             }
+            Err(error) if missing_runtime_session(&error) => {
+                self.mark_stopped(record).await?;
+                self.read_box(box_id).await
+            }
             Err(error) => {
                 host_log::emit(
                     "box",
@@ -200,12 +203,6 @@ impl BoxManager for LocalBoxService {
         self.workspace.remove_workspace(&box_id.to_string()).await?;
         self.active.write().await.remove(&box_id);
         self.boxes.remove(box_id).await
-    }
-
-    async fn list_changes(&self, box_id: Uuid) -> Result<Vec<WorkspaceChange>> {
-        self.runtime
-            .list_changes(self.ensure_runtime(box_id).await?)
-            .await
     }
 
     async fn list_files(&self, box_id: Uuid, path: &str) -> Result<Vec<FileNode>> {
@@ -272,14 +269,8 @@ impl BoxManager for LocalBoxService {
         metadata: BTreeMap<String, String>,
     ) -> Result<WorkspaceCheckpointRecord> {
         let sandbox_id = self.ensure_runtime(box_id).await?;
-        self.runtime.sync_workspace(sandbox_id).await?;
-        let changes = self.runtime.list_changes(sandbox_id).await?;
-        let lease = self
-            .workspace
-            .prepare_workspace(&box_id.to_string())
-            .await?;
-        self.workspace
-            .create_checkpoint(&lease, changes, name, metadata)
+        self.runtime
+            .capture_workspace_checkpoint(sandbox_id, name, metadata)
             .await
     }
 

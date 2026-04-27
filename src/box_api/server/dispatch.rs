@@ -262,16 +262,6 @@ pub(super) async fn dispatch_request(
                 .await?;
             send_response(&context.writer, request_id, BoxResponse::Ack).await?;
         }
-        BoxRequest::FsDiff { request_id, box_id } => {
-            authorize_box(&principal, box_id)?;
-            let changes = context.service.list_changes(box_id).await?;
-            send_response(
-                &context.writer,
-                request_id,
-                BoxResponse::Changes { changes },
-            )
-            .await?;
-        }
         BoxRequest::CheckpointCreate {
             request_id,
             box_id,

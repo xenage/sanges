@@ -10,7 +10,7 @@ use sagens_host::protocol::{CommandStream, ExecRequest, ShellRequest};
 use sagens_host::runtime::{
     SandboxService, SandboxSessionRecord, SandboxSessionState, SandboxSessionSummary,
 };
-use sagens_host::workspace::{FileNode, ReadFileResult, WorkspaceChange, WorkspaceCommitRecord};
+use sagens_host::workspace::{FileNode, ReadFileResult, WorkspaceCommitRecord};
 use sagens_host::{Result, SandboxError};
 use tempfile::tempdir;
 use tokio::sync::Mutex;
@@ -68,10 +68,6 @@ impl SandboxService for MockRuntime {
         })
     }
 
-    async fn list_changes(&self, _: Uuid) -> Result<Vec<WorkspaceChange>> {
-        Ok(Vec::new())
-    }
-
     async fn list_files(&self, _: Uuid, _: &str) -> Result<Vec<FileNode>> {
         Ok(Vec::new())
     }
@@ -121,20 +117,15 @@ impl SandboxService for MockRuntime {
         Ok(())
     }
 
-    async fn capture_workspace_checkpoint(&self, _: Uuid) -> Result<WorkspaceCommitRecord> {
+    async fn capture_workspace_checkpoint(
+        &self,
+        _: Uuid,
+        _: Option<String>,
+        _: std::collections::BTreeMap<String, String>,
+    ) -> Result<WorkspaceCommitRecord> {
         Err(SandboxError::backend(
             "capture_workspace_checkpoint is not used in this test",
         ))
-    }
-
-    async fn touch_session(&self, sandbox_id: Uuid) -> Result<()> {
-        if self.active.lock().await.contains_key(&sandbox_id) {
-            Ok(())
-        } else {
-            Err(SandboxError::invalid(format!(
-                "unknown active sandbox {sandbox_id}"
-            )))
-        }
     }
 
     async fn restore_workspace_checkpoint(

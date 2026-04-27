@@ -23,16 +23,6 @@ pub(super) fn styled_kind_cell(theme: &Theme, kind: &FileKind) -> Cell {
     Cell::rendered(label, theme.badge(label, style), Align::Center)
 }
 
-pub(super) fn styled_change_cell(theme: &Theme, label: &str) -> Cell {
-    let style = match label {
-        "A" | "??" => BadgeStyle::Success,
-        "M" => BadgeStyle::Warning,
-        "D" => BadgeStyle::Danger,
-        _ => BadgeStyle::Info,
-    };
-    Cell::rendered(label, theme.badge(label, style), Align::Center)
-}
-
 pub(super) fn isolation_mode_label(mode: IsolationMode) -> &'static str {
     match mode {
         IsolationMode::Compat => "compat",

@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::Result;
 use crate::protocol::{CommandStream, ExecRequest, ShellRequest};
 use crate::workspace::{
-    CheckpointRestoreMode, FileNode, ReadFileResult, WorkspaceChange, WorkspaceCheckpointRecord,
+    CheckpointRestoreMode, FileNode, ReadFileResult, WorkspaceCheckpointRecord,
 };
 
 use super::super::{BoxRecord, BoxSettingValue};
@@ -21,7 +21,6 @@ pub trait BoxManager: Send + Sync {
     async fn start_box(&self, box_id: Uuid) -> Result<BoxRecord>;
     async fn stop_box(&self, box_id: Uuid) -> Result<BoxRecord>;
     async fn remove_box(&self, box_id: Uuid) -> Result<()>;
-    async fn list_changes(&self, box_id: Uuid) -> Result<Vec<WorkspaceChange>>;
     async fn list_files(&self, box_id: Uuid, path: &str) -> Result<Vec<FileNode>>;
     async fn read_file(&self, box_id: Uuid, path: &str, limit: usize) -> Result<ReadFileResult>;
     async fn write_file(

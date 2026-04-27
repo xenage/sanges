@@ -35,9 +35,11 @@ async fn websocket_serves_lifecycle_exec_shell_fs_and_box_scoped_auth() {
         .await
         .expect("read");
     assert_eq!(file.data, b"hello");
-
-    let changes = client.list_changes(box_id).await.expect("changes");
-    assert_eq!(changes[0].path, "tracked.txt");
+    let files = client
+        .list_files(box_id, "/workspace".into())
+        .await
+        .expect("files");
+    assert!(files.iter().any(|entry| entry.path == "tracked.txt"));
 
     let shell = open_shell(&client, box_id).await;
     shell

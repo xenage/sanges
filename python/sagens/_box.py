@@ -28,9 +28,6 @@ class BoxFs:
     def remove(self, path: str, recursive: bool = False) -> None:
         self._client.remove_path(self._box_id, path, recursive=recursive)
 
-    def diff(self) -> list:
-        return self._client.list_changes(self._box_id)
-
     def upload(self, local_path: str | Path, remote_path: str | Path) -> None:
         self._client.upload_path(self._box_id, local_path, remote_path)
 

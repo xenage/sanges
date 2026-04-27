@@ -1,6 +1,7 @@
 mod lifecycle;
 mod ops;
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -13,20 +14,16 @@ use crate::bundle;
 use crate::config::{RuntimeConfig, SandboxSpec};
 use crate::guest_rpc::GuestRuntimeStats;
 use crate::host_hardening;
-use crate::host_log;
 use crate::protocol::{CommandStream, ExecRequest, ShellRequest};
 use crate::runtime::registry::{ManagedSandbox, SessionRegistry};
 use crate::runtime::{SandboxSessionRecord, SandboxSessionSummary};
-use crate::workspace::{
-    FileNode, ReadFileResult, WorkspaceChange, WorkspaceCommitRecord, WorkspaceStore,
-};
+use crate::workspace::{FileNode, ReadFileResult, WorkspaceCommitRecord, WorkspaceStore};
 
 #[async_trait]
 pub trait SandboxService: Send + Sync {
     async fn list_sandboxes(&self, include_history: bool) -> Result<Vec<SandboxSessionSummary>>;
     async fn create_sandbox(&self, spec: SandboxSpec) -> Result<SandboxSessionSummary>;
     async fn destroy_sandbox(&self, sandbox_id: Uuid) -> Result<SandboxSessionRecord>;
-    async fn list_changes(&self, sandbox_id: Uuid) -> Result<Vec<WorkspaceChange>>;
     async fn list_files(&self, sandbox_id: Uuid, path: &str) -> Result<Vec<FileNode>>;
     async fn read_file(&self, sandbox_id: Uuid, path: &str, limit: usize)
     -> Result<ReadFileResult>;
@@ -43,9 +40,12 @@ pub trait SandboxService: Send + Sync {
     async fn open_shell(&self, sandbox_id: Uuid, request: ShellRequest) -> Result<ShellSession>;
     async fn runtime_stats(&self, sandbox_id: Uuid) -> Result<GuestRuntimeStats>;
     async fn sync_workspace(&self, sandbox_id: Uuid) -> Result<()>;
-    async fn capture_workspace_checkpoint(&self, sandbox_id: Uuid)
-    -> Result<WorkspaceCommitRecord>;
-    async fn touch_session(&self, sandbox_id: Uuid) -> Result<()>;
+    async fn capture_workspace_checkpoint(
+        &self,
+        sandbox_id: Uuid,
+        name: Option<String>,
+        metadata: BTreeMap<String, String>,
+    ) -> Result<WorkspaceCommitRecord>;
     async fn restore_workspace_checkpoint(
         &self,
         workspace_id: &str,
@@ -75,40 +75,11 @@ impl AgentSandboxService {
             workspace,
             registry: SessionRegistry::new(),
         };
-        service.spawn_idle_reaper();
         Ok(service)
     }
 
     async fn session(&self, sandbox_id: Uuid) -> Result<Arc<ManagedSandbox>> {
         self.registry.active(sandbox_id).await
-    }
-
-    fn spawn_idle_reaper(&self) {
-        let registry = self.registry.clone();
-        let idle_timeout = self.config.lifecycle.idle_timeout;
-        let reap_interval = self.config.lifecycle.reap_interval;
-        let service = self.clone_for_reaper();
-        tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(reap_interval).await;
-                for sandbox_id in registry.idle_candidates(idle_timeout).await {
-                    if let Err(error) = service.destroy_sandbox_inner(sandbox_id).await {
-                        host_log::emit(
-                            "runtime",
-                            format!("idle reap failed sandbox_id={sandbox_id} error={error}"),
-                        );
-                    }
-                }
-            }
-        });
-    }
-
-    fn clone_for_reaper(&self) -> ReaperHandle {
-        ReaperHandle {
-            workspace: self.workspace.clone(),
-            registry: self.registry.clone(),
-            shutdown_grace: self.config.lifecycle.shutdown_grace,
-        }
     }
 }
 
@@ -124,10 +95,6 @@ impl SandboxService for AgentSandboxService {
 
     async fn destroy_sandbox(&self, sandbox_id: Uuid) -> Result<SandboxSessionRecord> {
         self.destroy_sandbox_inner(sandbox_id).await
-    }
-
-    async fn list_changes(&self, sandbox_id: Uuid) -> Result<Vec<WorkspaceChange>> {
-        self.list_changes_inner(sandbox_id).await
     }
 
     async fn list_files(&self, sandbox_id: Uuid, path: &str) -> Result<Vec<FileNode>> {
@@ -182,12 +149,11 @@ impl SandboxService for AgentSandboxService {
     async fn capture_workspace_checkpoint(
         &self,
         sandbox_id: Uuid,
+        name: Option<String>,
+        metadata: BTreeMap<String, String>,
     ) -> Result<WorkspaceCommitRecord> {
-        self.capture_workspace_checkpoint_inner(sandbox_id).await
-    }
-
-    async fn touch_session(&self, sandbox_id: Uuid) -> Result<()> {
-        self.registry.note_activity(sandbox_id).await
+        self.capture_workspace_checkpoint_inner(sandbox_id, name, metadata)
+            .await
     }
 
     async fn restore_workspace_checkpoint(
@@ -213,47 +179,4 @@ async fn resolve_config(mut config: RuntimeConfig) -> Result<RuntimeConfig> {
         eprintln!("sagens hardening warning: {warning}");
     }
     Ok(config)
-}
-
-#[derive(Clone)]
-struct ReaperHandle {
-    workspace: WorkspaceStore,
-    registry: SessionRegistry,
-    shutdown_grace: std::time::Duration,
-}
-
-impl ReaperHandle {
-    async fn destroy_sandbox_inner(&self, sandbox_id: Uuid) -> Result<SandboxSessionRecord> {
-        if let Some(record) = self.registry.history_record(sandbox_id).await {
-            return Ok(record);
-        }
-        let session = self.registry.remove_active(sandbox_id).await?;
-        let _ = session.guest.sync_workspace().await;
-        let final_snapshot = session.snapshot_for_diff().await?;
-        let changes = session.baseline.diff(&final_snapshot);
-        let mut summary = session.summary.write().await;
-        summary.state = crate::runtime::SandboxSessionState::Destroyed;
-        summary.ended_at_ms = Some(now_ms());
-        let record = SandboxSessionRecord {
-            summary: summary.clone(),
-            changes,
-        };
-        drop(summary);
-        let _ = session.guest.sync_workspace().await;
-        let _ = session.guest.shutdown().await;
-        let shutdown = session.backend.shutdown();
-        let _ = tokio::time::timeout(self.shutdown_grace, shutdown).await;
-        self.workspace.destroy_run(&session.run_layout).await?;
-        self.registry.save_history(record.clone()).await;
-        Ok(record)
-    }
-}
-
-fn now_ms() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(duration) => duration.as_millis() as u64,
-        Err(_) => 0,
-    }
 }

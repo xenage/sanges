@@ -21,8 +21,8 @@ use self::format::{
     format_box_network_setting, format_box_process_setting,
 };
 pub use self::lists::{
-    print_admin_bundle, print_admin_removed, print_changes, print_checkpoint_delete_ok,
-    print_checkpoint_id, print_checkpoint_restore_ok, print_checkpoints, print_files,
+    print_admin_bundle, print_admin_removed, print_checkpoint_delete_ok, print_checkpoint_id,
+    print_checkpoint_restore_ok, print_checkpoints, print_files,
 };
 
 pub fn print_help(text: &str) -> io::Result<()> {

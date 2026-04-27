@@ -360,6 +360,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          submodules: recursive
 
       - id: verify
         name: Verify tag points into main
@@ -372,6 +373,35 @@ jobs:
             echo "should_release=false" >> "$GITHUB_OUTPUT"
             echo "Skipping release because $GITHUB_REF does not point into origin/main."
           fi
+
+      - id: package_meta
+        name: Verify tag matches package version
+        if: steps.verify.outputs.should_release == 'true'
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import tomllib
+          from pathlib import Path
+
+          tag = os.environ["GITHUB_REF_NAME"]
+          match = re.fullmatch(r"v?([0-9]+(?:\.[0-9]+)*(?:(?:a|b|rc)[0-9]+)?)", tag)
+          if match is None:
+              raise SystemExit(
+                  f"release tag {tag!r} must look like vX.Y.Z or X.Y.Z for PyPI publishing"
+              )
+
+          tag_version = match.group(1)
+          python_version = tomllib.loads(Path("python/pyproject.toml").read_text())["project"]["version"]
+
+          if tag_version != python_version:
+              raise SystemExit(
+                  f"tag {tag!r} resolves to version {tag_version}, but package version is {python_version}"
+              )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"version={python_version}\n")
+          PY
 
       - name: Download release artifacts
         if: steps.verify.outputs.should_release == 'true'
@@ -388,6 +418,17 @@ jobs:
           path: release-assets
           pattern: python-dist-*
           merge-multiple: true
+
+      - uses: actions/setup-python@v6
+        if: steps.verify.outputs.should_release == 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Build Python sdist
+        if: steps.verify.outputs.should_release == 'true'
+        run: |
+          python -m pip install --upgrade pip build maturin
+          python -m build --sdist --outdir release-assets .
 
       - name: Remove obsolete macOS release assets
         if: steps.verify.outputs.should_release == 'true'
@@ -422,17 +463,16 @@ jobs:
             release-assets/sagens-*-macos-aarch64.zip.sha256
             release-assets/*.whl
 
-      - uses: actions/setup-python@v6
-        if: steps.verify.outputs.should_release == 'true'
-        with:
-          python-version: "3.12"
-
-      - name: Publish Python wheels to PyPI
+      - name: Publish Python distributions to PyPI
         if: steps.verify.outputs.should_release == 'true'
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: |
+          if [[ -z "${TWINE_PASSWORD:-}" ]]; then
+            echo "PYPI_API_TOKEN secret is not configured." >&2
+            exit 1
+          fi
           python -m pip install --upgrade pip twine
           python -m twine check release-assets/*.whl
           python -m twine upload --skip-existing release-assets/*.whl

@@ -12,8 +12,7 @@ use sagens_host::runtime::{
     SandboxService, SandboxSessionRecord, SandboxSessionState, SandboxSessionSummary,
 };
 use sagens_host::workspace::{
-    FileKind, FileNode, ReadFileResult, WorkspaceChange, WorkspaceChangeKind,
-    WorkspaceCommitRecord, WorkspaceCommitSummary,
+    FileKind, FileNode, ReadFileResult, WorkspaceCommitRecord, WorkspaceCommitSummary,
 };
 use sagens_host::{Result, SandboxError};
 use tokio::sync::{Mutex, mpsc};
@@ -112,26 +111,6 @@ impl SandboxService for MockSandboxService {
             },
             changes: Vec::new(),
         })
-    }
-
-    async fn list_changes(&self, sandbox_id: Uuid) -> Result<Vec<WorkspaceChange>> {
-        let workspace_id = self.session_workspace(sandbox_id).await?;
-        let files = self
-            .state
-            .lock()
-            .await
-            .workspace_files
-            .get(&workspace_id)
-            .cloned()
-            .unwrap_or_default();
-        Ok(files
-            .into_keys()
-            .map(|path| WorkspaceChange {
-                path,
-                kind: WorkspaceChangeKind::Added,
-                kind_after: Some(FileKind::File),
-            })
-            .collect())
     }
 
     async fn list_files(&self, sandbox_id: Uuid, _: &str) -> Result<Vec<FileNode>> {
@@ -257,6 +236,8 @@ impl SandboxService for MockSandboxService {
     async fn capture_workspace_checkpoint(
         &self,
         sandbox_id: Uuid,
+        name: Option<String>,
+        metadata: std::collections::BTreeMap<String, String>,
     ) -> Result<WorkspaceCommitRecord> {
         let workspace_id = self.session_workspace(sandbox_id).await?;
         let mut state = self.state.lock().await;
@@ -270,17 +251,13 @@ impl SandboxService for MockSandboxService {
             summary: WorkspaceCommitSummary {
                 checkpoint_id,
                 workspace_id,
-                name: None,
-                metadata: std::collections::BTreeMap::new(),
+                name,
+                metadata,
                 created_at_ms: 1,
             },
             source_checkpoint_id,
             changes: Vec::new(),
         })
-    }
-
-    async fn touch_session(&self, sandbox_id: Uuid) -> Result<()> {
-        self.session_workspace(sandbox_id).await.map(|_| ())
     }
 
     async fn restore_workspace_checkpoint(

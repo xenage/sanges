@@ -16,7 +16,6 @@ from ._decode import (
     serialize_box_setting,
     serialize_restore_mode,
     user_config_from_dict,
-    workspace_change_from_dict,
 )
 from ._download import resolve_download_file_path, should_fallback_to_file_download
 from ._errors import SagensError
@@ -29,7 +28,6 @@ from ._models import (
     ReadFileResult,
     UserConfig,
     WorkspaceCheckpointRecord,
-    WorkspaceChange,
 )
 from ._shell import BoxShell
 from ._transport import _Transport
@@ -218,10 +216,6 @@ class BoxApiClient:
             },
             "ack",
         )
-
-    def list_changes(self, box_id: UUID | str) -> list[WorkspaceChange]:
-        response = self._request({"type": "fs_diff", "box_id": str(box_id)}, "changes")
-        return [workspace_change_from_dict(item) for item in response["changes"]]
 
     def checkpoint_create(
         self,

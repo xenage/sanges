@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import platform
-import socket
 import sys
 import tempfile
 import zipfile
@@ -38,13 +37,11 @@ def real_daemon() -> Iterator[Daemon]:
     with tempfile.TemporaryDirectory(prefix="sagens-python-e2e-") as temp_dir:
         state_dir = Path(temp_dir)
         config_path = state_dir / "config.json"
-        endpoint = f"ws://127.0.0.1:{free_port()}"
         host_binary = resolve_host_binary()
         daemon = Daemon.start(
             host_binary=host_binary,
             state_dir=state_dir,
             user_config_path=config_path,
-            endpoint=endpoint,
         )
         try:
             yield daemon
@@ -113,14 +110,6 @@ def wheelhouse() -> Iterator[Path]:
         output_dir = Path(temp_dir)
         build_test_wheel(output_dir)
         yield output_dir
-
-
-def free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
 def _config_kwargs(payload: str) -> dict[str, object]:
     config = user_config_from_dict(json.loads(payload))
     return {

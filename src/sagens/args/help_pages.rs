@@ -145,7 +145,7 @@ pub(super) fn page_for<'a>(topic: HelpTopic, theme: &'a Theme) -> PageSpec<'a> {
                 ("rm", "Remove a BOX and its workspace."),
                 ("set", "Change per-BOX runtime settings."),
                 ("exec", "Run bash or python in a BOX."),
-                ("fs", "List, upload, download, or diff workspace files."),
+                ("fs", "List, upload, and download workspace files."),
                 ("checkpoint", "Manage workspace checkpoints."),
             ],
             examples: &[
@@ -255,6 +255,7 @@ pub(super) fn page_for<'a>(topic: HelpTopic, theme: &'a Theme) -> PageSpec<'a> {
                 "sagens box exec -i <BOX_ID> bash",
             ],
             notes: &[
+                "BOX must already be running; use `sagens box start <BOX_ID>` first.",
                 "Interactive mode opens a real shell when `bash` or `python` is used without trailing arguments.",
             ],
         },
@@ -267,14 +268,13 @@ pub(super) fn page_for<'a>(topic: HelpTopic, theme: &'a Theme) -> PageSpec<'a> {
                 ("ls", "List files under a path."),
                 ("upload", "Upload a local file or directory."),
                 ("download", "Download a file or directory."),
-                ("diff", "Show tracked workspace changes."),
             ],
             examples: &[
                 "sagens box fs <BOX_ID> ls /workspace",
                 "sagens box fs <BOX_ID> upload ./local ./workspace/local",
                 "sagens box fs <BOX_ID> download /workspace/out ./out",
             ],
-            notes: &["Filesystem commands auto-start the BOX runtime when needed."],
+            notes: &["BOX must already be running; use `sagens box start <BOX_ID>` first."],
         },
         HelpTopic::BoxFsList => PageSpec {
             title: "sagens box fs ls",
@@ -305,15 +305,6 @@ pub(super) fn page_for<'a>(topic: HelpTopic, theme: &'a Theme) -> PageSpec<'a> {
             commands: &[],
             examples: &["sagens box fs <BOX_ID> download /workspace/build ./build"],
             notes: &["Directory downloads recreate the remote tree under the local target path."],
-        },
-        HelpTopic::BoxFsDiff => PageSpec {
-            title: "sagens box fs diff",
-            about: "Show tracked workspace changes.",
-            badge: Some(theme.badge("Filesystem", BadgeStyle::Info)),
-            usage: &["sagens box fs <BOX_ID> diff"],
-            commands: &[],
-            examples: &["sagens box fs <BOX_ID> diff"],
-            notes: &["Diff output is grouped into a table with change kind and path."],
         },
         HelpTopic::BoxCheckpoint => PageSpec {
             title: "sagens box checkpoint",

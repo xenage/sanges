@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import socket
 from uuid import UUID
 
 from . import _rust
@@ -36,6 +37,7 @@ class Daemon:
         endpoint: str | None = None,
     ) -> "Daemon":
         host_binary = host_binary or resolve_host_binary()
+        endpoint = endpoint or _allocate_endpoint()
         handle = _rust.spawn_daemon_process(
             host_binary,
             str(state_dir) if state_dir else None,
@@ -113,3 +115,10 @@ class Daemon:
 
     def __exit__(self, *_: object) -> None:
         self.close()
+
+
+def _allocate_endpoint() -> str:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        host, port = sock.getsockname()
+    return f"ws://{host}:{port}"

@@ -48,7 +48,6 @@ pub enum HelpTopic {
     BoxFsList,
     BoxFsUpload,
     BoxFsDownload,
-    BoxFsDiff,
     BoxCheckpoint,
     BoxCheckpointCreate,
     BoxCheckpointList,
@@ -114,9 +113,6 @@ pub enum FsCommand {
         box_id: Uuid,
         remote_path: String,
         local_path: String,
-    },
-    Diff {
-        box_id: Uuid,
     },
 }
 

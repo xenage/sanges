@@ -43,7 +43,6 @@ pub(super) fn parse_help_topic(args: &[String]) -> Result<HelpTopic> {
         ["box", "fs", "ls"] => HelpTopic::BoxFsList,
         ["box", "fs", "upload"] => HelpTopic::BoxFsUpload,
         ["box", "fs", "download"] => HelpTopic::BoxFsDownload,
-        ["box", "fs", "diff"] => HelpTopic::BoxFsDiff,
         ["box", "checkpoint"] => HelpTopic::BoxCheckpoint,
         ["box", "checkpoint", "create"] => HelpTopic::BoxCheckpointCreate,
         ["box", "checkpoint", "list"] => HelpTopic::BoxCheckpointList,
@@ -80,7 +79,7 @@ pub(super) fn render_usage_hint(topic: HelpTopic) -> String {
         HelpTopic::BoxRemove => "usage: sagens box rm <BOX_ID>".into(),
         HelpTopic::BoxSet => "usage: sagens box set [BOX_ID] <setting> <value>".into(),
         HelpTopic::BoxExec => "usage: sagens box exec [-i] <BOX_ID> <bash|python> [args...]".into(),
-        HelpTopic::BoxFs => "usage: sagens box fs <BOX_ID> <ls|upload|download|diff> ...".into(),
+        HelpTopic::BoxFs => "usage: sagens box fs <BOX_ID> <ls|upload|download> ...".into(),
         HelpTopic::BoxFsList => "usage: sagens box fs <BOX_ID> ls [PATH]".into(),
         HelpTopic::BoxFsUpload => {
             "usage: sagens box fs <BOX_ID> upload <LOCAL_PATH> <REMOTE_PATH>".into()
@@ -88,7 +87,6 @@ pub(super) fn render_usage_hint(topic: HelpTopic) -> String {
         HelpTopic::BoxFsDownload => {
             "usage: sagens box fs <BOX_ID> download <REMOTE_PATH> <LOCAL_PATH>".into()
         }
-        HelpTopic::BoxFsDiff => "usage: sagens box fs <BOX_ID> diff".into(),
         HelpTopic::BoxCheckpoint => {
             "usage: sagens box checkpoint <create|list|restore|fork|delete> <BOX_ID> ...".into()
         }

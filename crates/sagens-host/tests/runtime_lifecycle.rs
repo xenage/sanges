@@ -11,7 +11,7 @@ use support::MockSandboxService;
 use tempfile::tempdir;
 
 #[tokio::test]
-async fn starts_on_demand_and_reuses_active_box_before_idle() {
+async fn exec_requires_explicit_start_and_reuses_running_box() {
     let temp = tempdir().expect("tempdir");
     let runtime = Arc::new(MockSandboxService::default());
     let service = LocalBoxService::new(
@@ -25,6 +25,16 @@ async fn starts_on_demand_and_reuses_active_box_before_idle() {
     .expect("service");
 
     let box_record = service.create_box().await.expect("create box");
+    let error = match service
+        .exec(box_record.box_id, ExecRequest::shell("echo first"))
+        .await
+    {
+        Ok(_) => panic!("exec without start should fail"),
+        Err(error) => error,
+    };
+    assert!(matches!(error, SandboxError::Conflict(_)));
+
+    service.start_box(box_record.box_id).await.expect("start");
     let first = service
         .exec(box_record.box_id, ExecRequest::shell("echo first"))
         .await
@@ -54,7 +64,7 @@ async fn starts_on_demand_and_reuses_active_box_before_idle() {
 }
 
 #[tokio::test]
-async fn restarts_after_idle_shutdown_and_preserves_workspace_identity() {
+async fn requires_explicit_restart_after_runtime_loss_and_preserves_workspace_identity() {
     let temp = tempdir().expect("tempdir");
     let runtime = Arc::new(MockSandboxService::default());
     let service = LocalBoxService::new(
@@ -68,6 +78,7 @@ async fn restarts_after_idle_shutdown_and_preserves_workspace_identity() {
     .expect("service");
 
     let box_record = service.create_box().await.expect("create box");
+    service.start_box(box_record.box_id).await.expect("start");
     service
         .write_file(box_record.box_id, "/workspace/keep.txt", b"hello", true)
         .await
@@ -81,10 +92,21 @@ async fn restarts_after_idle_shutdown_and_preserves_workspace_identity() {
         .expire_workspace(&box_record.box_id.to_string())
         .await;
 
+    let error = service
+        .read_file(box_record.box_id, "/workspace/keep.txt", 1024)
+        .await
+        .expect_err("read should fail until the box is started again");
+    assert!(matches!(error, SandboxError::Backend(_)));
+    let failed = service
+        .get_box(box_record.box_id)
+        .await
+        .expect("failed box");
+
+    let restarted = service.start_box(box_record.box_id).await.expect("restart");
     let file = service
         .read_file(box_record.box_id, "/workspace/keep.txt", 1024)
         .await
-        .expect("read file after restart");
+        .expect("read file after explicit restart");
     let second_sandbox = runtime
         .active_sandbox(&box_record.box_id.to_string())
         .await
@@ -99,6 +121,8 @@ async fn restarts_after_idle_shutdown_and_preserves_workspace_identity() {
 
     assert_eq!(runtime.create_count().await, 2);
     assert_ne!(first_sandbox, second_sandbox);
+    assert_eq!(failed.status, BoxStatus::Failed);
+    assert_eq!(restarted.status, BoxStatus::Running);
     assert_eq!(file.data, b"hello");
     assert_eq!(record.status, BoxStatus::Running);
     assert_eq!(record.workspace_path, box_record.workspace_path);
@@ -135,7 +159,7 @@ async fn start_box_returns_live_runtime_usage() {
 }
 
 #[tokio::test]
-async fn list_boxes_marks_stale_running_boxes_stopped() {
+async fn list_boxes_marks_stale_running_boxes_failed() {
     let temp = tempdir().expect("tempdir");
     let runtime = Arc::new(MockSandboxService::default());
     let service = LocalBoxService::new(
@@ -161,10 +185,10 @@ async fn list_boxes_marks_stale_running_boxes_stopped() {
         .expect("box record");
 
     assert_eq!(started.status, BoxStatus::Running);
-    assert_eq!(listed.status, BoxStatus::Stopped);
+    assert_eq!(listed.status, BoxStatus::Failed);
     assert_eq!(listed.runtime_usage, None);
     assert_eq!(listed.active_sandbox_id, None);
-    assert!(listed.last_stop_at_ms.is_some());
+    assert!(listed.last_error.is_some());
 }
 
 #[tokio::test]

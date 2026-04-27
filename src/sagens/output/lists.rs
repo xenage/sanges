@@ -2,9 +2,9 @@ use std::io::{self, Write};
 
 use crate::auth::AdminCredentialBundle;
 use crate::sagens::ui::{Align, BadgeStyle, Cell, Theme};
-use crate::workspace::{FileNode, WorkspaceChange, WorkspaceCheckpointRecord};
+use crate::workspace::{FileNode, WorkspaceCheckpointRecord};
 
-use super::cells::{styled_change_cell, styled_kind_cell};
+use super::cells::styled_kind_cell;
 use super::format::format_bytes;
 
 pub fn print_checkpoint_id(checkpoint_id: &str) -> io::Result<()> {
@@ -172,34 +172,6 @@ pub fn print_files(entries: &[FileNode]) -> io::Result<()> {
             ],
             rows,
         )
-    );
-    io::stdout().flush()
-}
-
-pub fn print_changes(changes: &[WorkspaceChange]) -> io::Result<()> {
-    let theme = Theme::stdout();
-    println!(
-        "{} {}",
-        theme.title("Workspace diff"),
-        theme.badge(&format!("{} changes", changes.len()), BadgeStyle::Accent)
-    );
-    println!();
-    if changes.is_empty() {
-        println!("{}", theme.dim("No tracked changes."));
-        return io::stdout().flush();
-    }
-    let rows = changes
-        .iter()
-        .map(|change| {
-            vec![
-                styled_change_cell(&theme, change.git_label()),
-                Cell::plain(&change.path),
-            ]
-        })
-        .collect::<Vec<_>>();
-    println!(
-        "{}",
-        theme.table(vec![Cell::plain("CHANGE"), Cell::plain("PATH")], rows)
     );
     io::stdout().flush()
 }

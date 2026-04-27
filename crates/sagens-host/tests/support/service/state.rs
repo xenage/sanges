@@ -2,14 +2,13 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use sagens_host::boxes::{BoxBooleanSetting, BoxNumericSetting, BoxRecord, BoxSettings};
-use sagens_host::workspace::{FileNode, WorkspaceChange, WorkspaceCheckpointRecord};
+use sagens_host::workspace::{FileNode, WorkspaceCheckpointRecord};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
 #[derive(Default)]
 pub(super) struct StubState {
     pub(super) boxes: HashMap<Uuid, BoxRecord>,
-    pub(super) changes: HashMap<Uuid, Vec<WorkspaceChange>>,
     pub(super) files: HashMap<Uuid, Vec<FileNode>>,
     pub(super) file_data: HashMap<(Uuid, String), Vec<u8>>,
     pub(super) committed: u64,

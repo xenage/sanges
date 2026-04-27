@@ -14,23 +14,23 @@ Python package for managing `sagens` daemons and BOX workspaces.
 Build the host binary and stage it into the package layout:
 
 ```bash
-rtk cargo run --bin xtask -- dev --python-package-root python
+cargo run --bin xtask -- dev --python-package-root python
 ```
 
 Install the package in editable mode:
 
 ```bash
-rtk python3 -m pip install -e python[test]
+python3 -m pip install -e python[test]
 ```
 
 Run smoke tests:
 
 ```bash
-rtk python3 -m pytest python/tests -q
+python3 -m pytest python/tests -q
 ```
 
 Run full e2e when runtime assets and env are ready:
 
 ```bash
-rtk SAGENS_RUN_E2E=1 python3 -m pytest python/tests/test_e2e.py -q
+SAGENS_RUN_E2E=1 python3 -m pytest python/tests/test_e2e.py -q
 ```

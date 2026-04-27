@@ -184,10 +184,6 @@ async fn run_fs_command(client: &SagensClient, command: FsCommand) -> Result<i32
             )
             .await?;
         }
-        FsCommand::Diff { box_id } => {
-            output::print_changes(&client.list_changes(box_id).await?)
-                .map_err(|error| SandboxError::io("writing fs diff output", error))?;
-        }
     }
     Ok(0)
 }

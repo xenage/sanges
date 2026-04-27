@@ -6,7 +6,7 @@ use crate::auth::{AdminCredentialBundle, BoxCredentialBundle};
 use crate::boxes::{BoxRecord, BoxSettingValue};
 use crate::protocol::OutputStream;
 use crate::workspace::CheckpointRestoreMode;
-use crate::workspace::{FileNode, ReadFileResult, WorkspaceChange, WorkspaceCheckpointRecord};
+use crate::workspace::{FileNode, ReadFileResult, WorkspaceCheckpointRecord};
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -135,10 +135,6 @@ pub enum BoxRequest {
         path: String,
         recursive: bool,
     },
-    FsDiff {
-        request_id: String,
-        box_id: Uuid,
-    },
     CheckpointCreate {
         request_id: String,
         box_id: Uuid,
@@ -203,7 +199,6 @@ impl BoxRequest {
             | Self::FsWrite { request_id, .. }
             | Self::FsMkdir { request_id, .. }
             | Self::FsRemove { request_id, .. }
-            | Self::FsDiff { request_id, .. }
             | Self::CheckpointCreate { request_id, .. }
             | Self::CheckpointList { request_id, .. }
             | Self::CheckpointRestore { request_id, .. }
@@ -236,9 +231,6 @@ pub enum BoxResponse {
     },
     File {
         file: ReadFileResult,
-    },
-    Changes {
-        changes: Vec<WorkspaceChange>,
     },
     Checkpoint {
         checkpoint: WorkspaceCheckpointRecord,

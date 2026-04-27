@@ -248,39 +248,19 @@ impl HardeningConfig {
 
 #[derive(Debug, Clone)]
 pub struct LifecycleConfig {
-    pub idle_timeout: Duration,
-    pub shutdown_grace: Duration,
     pub warm_pool_size: usize,
-    pub reap_interval: Duration,
 }
 
 impl Default for LifecycleConfig {
     fn default() -> Self {
-        Self {
-            idle_timeout: Duration::from_secs(20),
-            shutdown_grace: Duration::from_secs(2),
-            warm_pool_size: 1,
-            reap_interval: Duration::from_millis(500),
-        }
+        Self { warm_pool_size: 1 }
     }
 }
 
 impl LifecycleConfig {
     pub fn validate(&self) -> Result<()> {
-        if self.idle_timeout < Duration::from_secs(1) {
-            return Err(SandboxError::invalid(
-                "idle_timeout must be at least one second",
-            ));
-        }
-        if self.shutdown_grace < Duration::from_millis(100) {
-            return Err(SandboxError::invalid(
-                "shutdown_grace must be at least 100ms",
-            ));
-        }
-        if self.reap_interval < Duration::from_millis(100) {
-            return Err(SandboxError::invalid(
-                "reap_interval must be at least 100ms",
-            ));
+        if self.warm_pool_size > 64 {
+            return Err(SandboxError::invalid("warm_pool_size must not exceed 64"));
         }
         Ok(())
     }

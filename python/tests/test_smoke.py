@@ -16,10 +16,9 @@ def test_websocket_contract_preserves_exec_and_file_flow() -> None:
         exec_result = box.exec_bash("touch tracked.txt")
         assert exec_result.exit_status.success
 
-        changes = box.fs.diff()
-        assert changes[0].path == "tracked.txt"
-
         box.fs.write("/workspace/tracked.txt", b"hello websocket")
+        files = box.fs.list()
+        assert any(entry.path == "tracked.txt" for entry in files)
         file = box.fs.read("/workspace/tracked.txt", 4096)
         assert file.data == b"hello websocket"
 

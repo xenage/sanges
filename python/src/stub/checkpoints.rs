@@ -24,7 +24,6 @@ pub(super) fn new_box_record(name: Option<String>) -> BoxRecord {
 
 pub(super) fn remove_box_state(state: &mut StubState, box_id: Uuid) {
     state.boxes.remove(&box_id);
-    state.changes.remove(&box_id);
     state.files.remove(&box_id);
     state.checkpoints.remove(&box_id);
     state
@@ -82,7 +81,6 @@ pub(super) fn apply_snapshot(
         state.file_data.insert((box_id, path.clone()), data.clone());
     }
     state.files.insert(box_id, file_nodes(snapshot));
-    state.changes.insert(box_id, workspace_changes(snapshot));
 }
 
 fn file_nodes(snapshot: &BTreeMap<String, Vec<u8>>) -> Vec<FileNode> {
@@ -98,7 +96,7 @@ fn file_nodes(snapshot: &BTreeMap<String, Vec<u8>>) -> Vec<FileNode> {
         .collect()
 }
 
-fn workspace_changes(snapshot: &BTreeMap<String, Vec<u8>>) -> Vec<WorkspaceChange> {
+pub(super) fn workspace_changes(snapshot: &BTreeMap<String, Vec<u8>>) -> Vec<WorkspaceChange> {
     snapshot
         .keys()
         .map(|path| WorkspaceChange {
