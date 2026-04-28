@@ -44,7 +44,7 @@ base64 = "0.22.1"
 ext4-lwext4 = "0.1.2"
 flate2 = "1.1.9"
 futures-util = "0.3.32"
-libc = "0.2.185"
+libc = "0.2.186"
 pyo3 = { version = "0.28.3", features = ["abi3-py311", "extension-module"] }
 reqwest = { version = "0.13.2", default-features = false, features = ["blocking", "rustls"] }
 sequoia-openpgp = { version = "2.2.0", default-features = false, features = ["compression", "crypto-rust", "allow-experimental-crypto", "allow-variable-time-crypto"] }
