@@ -2,9 +2,9 @@
 
 ## Why this matters
 
-If you are evaluating `sagens`, you usually do not want a repo tour. You want to know which path gets you to a real result fastest.
+If you are evaluating `sagens`, you usually do not want a repo tour. You want to know how quickly you can give a user-facing agent its own safe place to work.
 
-This docs set is organized around that outcome: start a BOX, run code safely, keep the workspace, checkpoint before risky work, and hand a single BOX to a single agent when you need tighter scope.
+This docs set is organized around that outcome: create a BOX for a user, run agent work safely, keep the workspace, checkpoint before risky changes, and hand one BOX to one agent when you need tighter scope.
 
 ## Choose your path
 
@@ -15,7 +15,7 @@ This docs set is organized around that outcome: start a BOX, run code safely, ke
 - I want the public nouns in one page: [Mental model](mental-model.md)
 - I want the workspace to survive restarts: [Persistent workspaces](recipes/persistent-workspaces.md)
 - I want safe rollback and branching: [Checkpoints and forks](recipes/checkpoints-and-forks.md)
-- I want one credential per BOX: [Box-scoped access](recipes/box-scoped-access.md)
+- I want one agent credential per user BOX: [Box-scoped access](recipes/box-scoped-access.md)
 - I need to debug the control plane or runtime: [Troubleshooting](troubleshooting.md)
 
 ## Copy-paste example
@@ -50,7 +50,7 @@ PY
 
 Both entry points talk to the same product model.
 
-The CLI is a direct way to operate the daemon and BOX lifecycle by hand. The Python API is the same control plane packaged for code. In both cases you are creating a durable BOX, not a throwaway shell session.
+The CLI is a direct way to operate the daemon and BOX lifecycle by hand. The Python API is the same control plane packaged for your product backend. In both cases you are creating a durable user BOX, not a throwaway shell session.
 
 ## What to read next
 
