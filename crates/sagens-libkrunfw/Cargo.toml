@@ -12,4 +12,4 @@ publish.workspace = true
 build = "build.rs"
 
 [build-dependencies]
-object = "0.37.3"
+object = "0.39.1"
