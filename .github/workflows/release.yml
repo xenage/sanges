@@ -357,6 +357,104 @@ jobs:
         if: always()
         run: ${SCCACHE_PATH} --show-stats
 
+  package_node:
+    name: Package Node
+    if: needs.gate.outputs.should_run == 'true'
+    needs:
+      - gate
+      - build
+    runs-on: ubuntu-24.04
+    env:
+      ARTIFACT_VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('ci-{0}', github.sha) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Download standalone binaries
+        uses: actions/download-artifact@v8
+        with:
+          path: node-binaries
+          pattern: bundle-*
+          merge-multiple: true
+
+      - name: Stage platform packages
+        run: |
+          mkdir -p npm/platforms/linux-x64/bin npm/platforms/linux-arm64/bin npm/platforms/darwin-arm64/bin
+          cp "node-binaries/sagens-${ARTIFACT_VERSION}-linux-x86_64" npm/platforms/linux-x64/bin/sagens
+          cp "node-binaries/sagens-${ARTIFACT_VERSION}-linux-aarch64" npm/platforms/linux-arm64/bin/sagens
+          cp "node-binaries/sagens-${ARTIFACT_VERSION}-macos-aarch64" npm/platforms/darwin-arm64/bin/sagens
+          chmod +x npm/platforms/*/bin/sagens
+
+      - name: Build Node SDK
+        run: |
+          npm ci --prefix node
+          npm run --prefix node build
+
+      - name: Pack Node packages
+        run: |
+          mkdir -p node-dist
+          npm pack ./npm/platforms/linux-x64 --pack-destination node-dist
+          npm pack ./npm/platforms/linux-arm64 --pack-destination node-dist
+          npm pack ./npm/platforms/darwin-arm64 --pack-destination node-dist
+          npm pack ./node --pack-destination node-dist
+
+      - name: Upload Node package artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: node-dist
+          path: node-dist/*.tgz
+          if-no-files-found: error
+
+  test_smoke_node:
+    name: Smoke Node (${{ matrix.platform }})
+    if: needs.gate.outputs.should_run == 'true'
+    needs:
+      - gate
+      - package_node
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x64
+          - os: ubuntu-24.04-arm
+            platform: linux-arm64
+          - os: macos-14
+            platform: darwin-arm64
+    env:
+      PACKAGE_VERSION: "0.0.0.0.3"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Download Node packages
+        uses: actions/download-artifact@v8
+        with:
+          name: node-dist
+          path: node-dist
+
+      - name: Install packed Node package
+        run: |
+          tmpdir="$(mktemp -d)"
+          echo "NODE_E2E_TMP=$tmpdir" >> "$GITHUB_ENV"
+          cd "$tmpdir"
+          npm init -y
+          npm install \
+            "$GITHUB_WORKSPACE/node-dist/xenage-sanges-${PACKAGE_VERSION}.tgz" \
+            "$GITHUB_WORKSPACE/node-dist/xenage-sanges-${{ matrix.platform }}-${PACKAGE_VERSION}.tgz"
+
+      - name: Run Node smoke
+        run: |
+          export SAGENS_NODE_IMPORT="$NODE_E2E_TMP/node_modules/@xenage/sanges/dist/index.js"
+          node node/tests/smoke.mjs
+
   test_linux_full:
     name: Full Linux E2E (xenage-kvm)
     if: needs.gate.outputs.should_run == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
@@ -421,6 +519,48 @@ jobs:
       - name: Run full Python e2e
         run: SAGENS_RUN_E2E=1 python -m pytest python/tests/test_e2e.py -q
 
+  test_linux_full_node:
+    name: Full Node E2E (xenage-kvm)
+    if: needs.gate.outputs.should_run == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+    needs:
+      - gate
+      - test_smoke_node
+    runs-on: xenage-kvm
+    env:
+      PACKAGE_VERSION: "0.0.0.0.3"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Verify KVM is available
+        run: |
+          test -c /dev/kvm
+          ls -l /dev/kvm
+
+      - name: Download Node packages
+        uses: actions/download-artifact@v8
+        with:
+          name: node-dist
+          path: node-dist
+
+      - name: Install packed Node package
+        run: |
+          tmpdir="$(mktemp -d)"
+          echo "NODE_E2E_TMP=$tmpdir" >> "$GITHUB_ENV"
+          cd "$tmpdir"
+          npm init -y
+          npm install \
+            "$GITHUB_WORKSPACE/node-dist/xenage-sanges-${PACKAGE_VERSION}.tgz" \
+            "$GITHUB_WORKSPACE/node-dist/xenage-sanges-linux-x64-${PACKAGE_VERSION}.tgz"
+
+      - name: Run full Node e2e
+        run: |
+          export SAGENS_NODE_IMPORT="$NODE_E2E_TMP/node_modules/@xenage/sanges/dist/index.js"
+          SAGENS_RUN_E2E=1 node node/tests/e2e.mjs
+
   release:
     name: Release
     if: needs.gate.outputs.should_run == 'true' && startsWith(github.ref, 'refs/tags/')
@@ -429,8 +569,10 @@ jobs:
       - build
       - test_smoke
       - test_smoke_python
+      - test_smoke_node
       - test_linux_full
       - test_linux_full_python
+      - test_linux_full_node
     runs-on: ubuntu-24.04
     environment: apple
     permissions:
@@ -459,6 +601,7 @@ jobs:
         run: |
           python - <<'PY'
           import os
+          import json
           import re
           import tomllib
           from pathlib import Path
@@ -472,10 +615,29 @@ jobs:
 
           tag_version = match.group(1)
           python_version = tomllib.loads(Path("python/pyproject.toml").read_text())["project"]["version"]
+          node_package_paths = [
+              Path("node/package.json"),
+              Path("npm/platforms/darwin-arm64/package.json"),
+              Path("npm/platforms/linux-arm64/package.json"),
+              Path("npm/platforms/linux-x64/package.json"),
+          ]
+          node_versions = {
+              str(path): json.loads(path.read_text())["version"]
+              for path in node_package_paths
+          }
 
           if tag_version != python_version:
               raise SystemExit(
                   f"tag {tag!r} resolves to version {tag_version}, but package version is {python_version}"
+              )
+          mismatched = {
+              path: version
+              for path, version in node_versions.items()
+              if version != tag_version
+          }
+          if mismatched:
+              raise SystemExit(
+                  f"tag {tag!r} resolves to {tag_version}, but Node package versions differ: {mismatched}"
               )
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
@@ -498,10 +660,23 @@ jobs:
           pattern: python-dist-*
           merge-multiple: true
 
+      - name: Download Node package artifacts
+        if: steps.verify.outputs.should_release == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          path: release-assets
+          name: node-dist
+
       - uses: actions/setup-python@v6
         if: steps.verify.outputs.should_release == 'true'
         with:
           python-version: "3.12"
+
+      - uses: actions/setup-node@v6
+        if: steps.verify.outputs.should_release == 'true'
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Remove obsolete release assets
         if: steps.verify.outputs.should_release == 'true'
@@ -510,7 +685,7 @@ jobs:
         run: |
           asset_ids_file="$(mktemp)"
           if ! gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
-            --jq '.assets[]? | select(.name | test("\\.whl$|sagens-.*-macos-x86_64(\\.zip(\\.sha256)?|\\.sha256)?$|sagens-.*-macos-aarch64(\\.sha256)?$")) | .id' \
+            --jq '.assets[]? | select(.name | test("\\.whl$|\\.tgz$|sagens-.*-macos-x86_64(\\.zip(\\.sha256)?|\\.sha256)?$|sagens-.*-macos-aarch64(\\.sha256)?$")) | .id' \
             > "$asset_ids_file" 2>/dev/null; then
             exit 0
           fi
@@ -537,6 +712,7 @@ jobs:
             release-assets/sagens-*-macos-aarch64.zip
             release-assets/sagens-*-macos-aarch64.zip.sha256
             release-assets/*.whl
+            release-assets/*.tgz
 
       - name: Publish Python distributions to PyPI
         if: steps.verify.outputs.should_release == 'true'
@@ -551,3 +727,30 @@ jobs:
           python -m pip install --upgrade pip twine
           python -m twine check release-assets/*.whl
           python -m twine upload --skip-existing --disable-progress-bar release-assets/*.whl
+
+      - name: Publish Node packages to npm
+        if: steps.verify.outputs.should_release == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_KEY }}
+          PACKAGE_VERSION: ${{ steps.package_meta.outputs.version }}
+        run: |
+          if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
+            echo "NPM_KEY secret is not configured." >&2
+            exit 1
+          fi
+          npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
+
+          publish_if_missing() {
+            local package_name="$1"
+            local tarball="$2"
+            if npm view "${package_name}@${PACKAGE_VERSION}" version >/dev/null 2>&1; then
+              echo "${package_name}@${PACKAGE_VERSION} already exists on npm; skipping."
+              return 0
+            fi
+            npm publish "$tarball" --access public
+          }
+
+          publish_if_missing "@xenage/sanges-linux-x64" "release-assets/xenage-sanges-linux-x64-${PACKAGE_VERSION}.tgz"
+          publish_if_missing "@xenage/sanges-linux-arm64" "release-assets/xenage-sanges-linux-arm64-${PACKAGE_VERSION}.tgz"
+          publish_if_missing "@xenage/sanges-darwin-arm64" "release-assets/xenage-sanges-darwin-arm64-${PACKAGE_VERSION}.tgz"
+          publish_if_missing "@xenage/sanges" "release-assets/xenage-sanges-${PACKAGE_VERSION}.tgz"

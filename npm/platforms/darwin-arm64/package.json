@@ -1,0 +1,12 @@
+{
+  "name": "@xenage/sanges-darwin-arm64",
+  "version": "0.0.0.0.3",
+  "description": "macOS arm64 host binary for @xenage/sanges.",
+  "license": "MIT",
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "files": ["bin/sagens"],
+  "publishConfig": {
+    "access": "public"
+  }
+}

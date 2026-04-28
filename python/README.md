@@ -9,6 +9,61 @@ Python package for managing `sagens` daemons and BOX workspaces.
 - High-level classes for `Daemon`, `Box`, `BoxFs`, `BoxCheckpoint`, and `BoxShell`
 - `pytest` smoke and gated full e2e coverage
 
+## Quickstart
+
+Build the host binary, install the package, and run Python inside a BOX:
+
+```bash
+cargo run --bin xtask -- dev --python-package-root python
+python3 -m pip install -e python[test]
+
+python3 - <<'PY'
+from tempfile import TemporaryDirectory
+
+from sagens import Daemon
+
+with TemporaryDirectory() as state_dir:
+    with Daemon.start(state_dir=state_dir) as daemon:
+        box = daemon.create_box()
+
+        # Settings are stop-only, so set them before start or after stop.
+        box.set("memory_mb", 512)
+        box.set("fs_size_mib", 1024)
+        box.set("cpu_cores", 2)
+        box.set("network_enabled", False)
+
+        box.start()
+        box.fs.write("/workspace/input.txt", b"hello from python\n")
+
+        result = box.exec_python(
+            [
+                "-c",
+                (
+                    "from pathlib import Path; "
+                    "text = Path('/workspace/input.txt').read_text(); "
+                    "print(text.strip().upper())"
+                ),
+            ]
+        )
+        print(result.stdout.decode().strip())
+
+        box.stop()
+PY
+```
+
+## BOX settings examples
+
+All BOX settings are updated with `box.set(...)` while the BOX is stopped:
+
+```python
+box.set("memory_mb", 512)       # Guest RAM in MiB.
+box.set("fs_size_mib", 1024)    # Persistent workspace disk in MiB.
+box.set("cpu_cores", 2)
+
+box.set("network_enabled", True)   # Enable network.
+box.set("network_enabled", False)  # Disable network.
+```
+
 ## Local development
 
 Build the host binary and stage it into the package layout:

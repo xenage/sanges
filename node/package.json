@@ -1,0 +1,47 @@
+{
+  "name": "@xenage/sanges",
+  "version": "0.0.0.0.3",
+  "description": "Node SDK and CLI shim for sagens agent BOX microVMs.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "sagens": "./bin/sagens.js"
+  },
+  "files": [
+    "bin/sagens.js",
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test:smoke": "npm run build && SAGENS_NODE_IMPORT=../dist/index.js node tests/smoke.mjs",
+    "test:e2e": "npm run build && SAGENS_NODE_IMPORT=../dist/index.js SAGENS_RUN_E2E=1 node tests/e2e.mjs",
+    "test": "npm run test:smoke"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "optionalDependencies": {
+    "@xenage/sanges-darwin-arm64": "0.0.0.0.3",
+    "@xenage/sanges-linux-arm64": "0.0.0.0.3",
+    "@xenage/sanges-linux-x64": "0.0.0.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

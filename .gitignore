@@ -50,6 +50,13 @@ __pycache__/
 /python/sagens/*.pyd
 /python/sagens/_bin/sagens
 
+# Node helper debris
+/node/node_modules/
+/node/dist/
+/node/*.tgz
+/npm/platforms/*/bin/sagens
+/npm/platforms/*/*.tgz
+
 # Logs / temp files
 *.log
 *.tmp

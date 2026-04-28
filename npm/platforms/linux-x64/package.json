@@ -1,0 +1,12 @@
+{
+  "name": "@xenage/sanges-linux-x64",
+  "version": "0.0.0.0.3",
+  "description": "Linux x64 host binary for @xenage/sanges.",
+  "license": "MIT",
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "files": ["bin/sagens"],
+  "publishConfig": {
+    "access": "public"
+  }
+}

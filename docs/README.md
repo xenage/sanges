@@ -11,6 +11,7 @@ This docs set is organized around that outcome: create a BOX for a user, run age
 - I want the product thesis first: [Why sagens](why-sagens.md)
 - I want the fastest CLI path: [CLI quickstart](quickstart-cli.md)
 - I want the fastest Python path: [Python quickstart](quickstart-python.md)
+- I want the fastest Node path: [Node quickstart](quickstart-node.md)
 - I want Python classes, types, and settings: [Python API](python-api.md)
 - I want the public nouns in one page: [Mental model](mental-model.md)
 - I want the workspace to survive restarts: [Persistent workspaces](recipes/persistent-workspaces.md)
@@ -46,15 +47,33 @@ with TemporaryDirectory() as state_dir:
 PY
 ```
 
+### Node
+
+```bash
+npm install @xenage/sanges
+
+node --input-type=module <<'JS'
+import { Daemon } from "@xenage/sanges";
+
+const daemon = await Daemon.start();
+try {
+  console.log((await daemon.createBox()).boxId);
+} finally {
+  await daemon.close();
+}
+JS
+```
+
 ## What just happened
 
 Both entry points talk to the same product model.
 
-The CLI is a direct way to operate the daemon and BOX lifecycle by hand. The Python API is the same control plane packaged for your product backend. In both cases you are creating a durable user BOX, not a throwaway shell session.
+The CLI is a direct way to operate the daemon and BOX lifecycle by hand. The Python and Node APIs are the same control plane packaged for your product backend. In every case you are creating a durable user BOX, not a throwaway shell session.
 
 ## What to read next
 
 - Start from the command line: [CLI quickstart](quickstart-cli.md)
 - Start from code: [Python quickstart](quickstart-python.md)
+- Start from JavaScript: [Node quickstart](quickstart-node.md)
 - Use Python as an API: [Python API](python-api.md)
 - Understand the tradeoff: [Why sagens](why-sagens.md)

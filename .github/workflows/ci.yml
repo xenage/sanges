@@ -24,6 +24,10 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
       - name: Set up sccache
         uses: mozilla-actions/sccache-action@v0.0.10
 
@@ -47,6 +51,11 @@ jobs:
 
       - name: Build docs
         run: cargo doc --no-deps
+
+      - name: Build Node SDK
+        run: |
+          npm ci --prefix node
+          npm run --prefix node build
 
       - name: Run tests
         run: cargo test
