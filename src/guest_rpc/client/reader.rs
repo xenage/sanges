@@ -134,10 +134,11 @@ impl GuestRpcClient {
         target: Option<Uuid>,
         message: &str,
     ) -> Result<()> {
+        let mut delivered = false;
         if let Some(id) = request_id {
             self.resolve_response(id, Err(SandboxError::protocol(message.to_string())))
                 .await;
-            return Ok(());
+            delivered = true;
         }
         if let Some(exec_id) = target {
             if let Some(sender) = self.inner.exec_streams.lock().await.remove(&exec_id) {
@@ -152,17 +153,21 @@ impl GuestRpcClient {
                         status: crate::protocol::ExecExit::Killed,
                     })
                     .await;
-                return Ok(());
+                delivered = true;
             }
             if let Some(sender) = self.inner.shell_streams.lock().await.remove(&exec_id) {
                 let _ignored = sender
                     .send(ShellEvent::Output(message.as_bytes().to_vec()))
                     .await;
                 let _ignored = sender.send(ShellEvent::Exit(-1)).await;
-                return Ok(());
+                delivered = true;
             }
         }
-        Err(SandboxError::protocol(message.to_string()))
+        if delivered {
+            Ok(())
+        } else {
+            Err(SandboxError::protocol(message.to_string()))
+        }
     }
 
     async fn resolve_response(&self, request_id: String, response: Result<GuestResponse>) {
@@ -202,4 +207,47 @@ impl GuestRpcClient {
 
 fn decode_event(line: &str) -> Result<GuestEvent> {
     serde_json::from_str(line).map_err(|error| SandboxError::json("decoding guest event", error))
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::sync::mpsc;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn route_error_with_request_id_still_closes_exec_stream() {
+        let (stream, _peer) = tokio::net::UnixStream::pair().expect("unix stream pair");
+        let client = GuestRpcClient::from_stream(stream);
+        let exec_id = Uuid::new_v4();
+        let (sender, mut receiver) = mpsc::channel(2);
+        client
+            .inner
+            .exec_streams
+            .lock()
+            .await
+            .insert(exec_id, sender);
+
+        client
+            .route_error(Some("request-1".into()), Some(exec_id), "spawn failed")
+            .await
+            .expect("route error");
+
+        let output = receiver.recv().await.expect("error output");
+        assert_eq!(
+            output,
+            ExecutionEvent::Output {
+                stream: OutputStream::Stderr,
+                data: b"spawn failed".to_vec()
+            }
+        );
+        let exit = receiver.recv().await.expect("error exit");
+        assert_eq!(
+            exit,
+            ExecutionEvent::Exit {
+                status: crate::protocol::ExecExit::Killed
+            }
+        );
+        assert!(client.inner.exec_streams.lock().await.is_empty());
+    }
 }

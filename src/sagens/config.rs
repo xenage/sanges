@@ -60,8 +60,8 @@ pub fn build_runtime_config_for_endpoint(
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(11_000),
             boot_timeout: Duration::from_secs(30),
-            guest_uid: 65_534,
-            guest_gid: 65_534,
+            guest_uid: default_guest_uid(),
+            guest_gid: default_guest_gid(),
             guest_tmpfs_mib: 64,
         },
         workspace: WorkspaceConfig {
@@ -106,6 +106,16 @@ fn default_guest_path(kind: ProjectArtifactKind, prefer_embedded_assets: bool) -
         return PathBuf::new();
     }
     required_path(&default_project_artifact_candidates(kind))
+}
+
+fn default_guest_uid() -> u32 {
+    // HVF-backed macOS guests currently fail process spawn after dropping to nobody.
+    if cfg!(target_os = "macos") { 0 } else { 65_534 }
+}
+
+fn default_guest_gid() -> u32 {
+    // Keep Linux least-privileged while allowing macOS microVM exec to work.
+    if cfg!(target_os = "macos") { 0 } else { 65_534 }
 }
 
 fn default_firmware_path(prefer_embedded_assets: bool) -> Option<PathBuf> {
