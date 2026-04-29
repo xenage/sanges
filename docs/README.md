@@ -9,6 +9,7 @@ This docs set is organized around that outcome: create a BOX for a user, run age
 ## Choose your path
 
 - I want the product thesis first: [Why sagens](why-sagens.md)
+- I need the support matrix first: [Support matrix](support-matrix.md)
 - I want the fastest CLI path: [CLI quickstart](quickstart-cli.md)
 - I want the fastest Python path: [Python quickstart](quickstart-python.md)
 - I want the fastest Node path: [Node quickstart](quickstart-node.md)
@@ -72,6 +73,7 @@ The CLI is a direct way to operate the daemon and BOX lifecycle by hand. The Pyt
 
 ## What to read next
 
+- Start from compatibility: [Support matrix](support-matrix.md)
 - Start from the command line: [CLI quickstart](quickstart-cli.md)
 - Start from code: [Python quickstart](quickstart-python.md)
 - Start from JavaScript: [Node quickstart](quickstart-node.md)

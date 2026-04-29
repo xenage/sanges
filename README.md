@@ -12,6 +12,24 @@ If you are building agentic chat for other people, the shape changes. Every user
 
 The bet is simple: a user session should not be a shared shell. It should be a durable BOX.
 
+## Supported hosts and SDK runtimes
+
+`sagens` currently publishes and tests the following host matrix:
+
+| Host OS | CPU | Python package | Node package | microVM backend |
+| --- | --- | --- | --- | --- |
+| macOS | arm64 (Apple Silicon) | Python 3.11+ | Node 20+ | vendored `libkrun` on Apple's Hypervisor Framework (HVF) with bundled `KRUN_EFI.silent.fd` firmware |
+| Linux | x86_64 | Python 3.11+ | Node 20+ | vendored `libkrun` on KVM with a guest kernel materialized from `libkrunfw-x86_64` |
+| Linux | arm64 / aarch64 | Python 3.11+ | Node 20+ | vendored `libkrun` on KVM with a guest kernel materialized from `libkrunfw-aarch64` |
+
+Notes:
+
+- Linux full microVM runtime requires `/dev/kvm`.
+- The Python package requires `>=3.11`, is built with `pyo3` `abi3-py311`, and is classified for Python `3.11`, `3.12`, and `3.13`.
+- The Node package declares `"engines": { "node": ">=20" }`. CI currently exercises Node `22`.
+- Windows and macOS `x86_64` are not supported by the current libkrun-only backend.
+- For the per-host runtime breakdown, see [Support matrix](docs/support-matrix.md).
+
 ## What you can build
 
 - A coding agent product where each customer gets an isolated Linux workspace.
@@ -160,6 +178,7 @@ The `memory`, `fs`, `cpu`, and `network` names above are short aliases for `memo
 ## Choose your path
 
 - I want to understand the model: [Why sagens](docs/why-sagens.md)
+- I need the support matrix first: [Support matrix](docs/support-matrix.md)
 - I want to try it from the CLI: [CLI quickstart](docs/quickstart-cli.md)
 - I want to drive it from Python: [Python quickstart](docs/quickstart-python.md)
 - I want to drive it from Node: [Node quickstart](docs/quickstart-node.md)

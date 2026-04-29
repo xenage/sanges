@@ -19,3 +19,10 @@ try {
 
 The package installs a small SDK plus a platform-specific host binary through
 npm optional dependencies. No source build or runtime asset download is needed.
+
+## Support
+
+- Host OS and CPU: macOS `arm64`, Linux `x64`, Linux `arm64`
+- Node versions: `>=20`
+- Linux full microVM runtime requires `/dev/kvm`
+- The current libkrun-only backend does not support macOS `x64` or Windows hosts

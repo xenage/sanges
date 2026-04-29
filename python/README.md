@@ -9,6 +9,13 @@ Python package for managing `sagens` daemons and BOX workspaces.
 - High-level classes for `Daemon`, `Box`, `BoxFs`, `BoxCheckpoint`, and `BoxShell`
 - `pytest` smoke and gated full e2e coverage
 
+## Support
+
+- Host OS and CPU: macOS `arm64`, Linux `x86_64`, Linux `arm64` / `aarch64`
+- Python versions: `3.11+` (`pyo3` `abi3-py311`; classifiers for `3.11`, `3.12`, and `3.13`)
+- Linux full microVM runtime requires `/dev/kvm`
+- The current libkrun-only backend does not support macOS `x86_64` or Windows hosts
+
 ## Quickstart
 
 Build the host binary, install the package, and run Python inside a BOX:
