@@ -1,6 +1,6 @@
 {
   "name": "@xenage/sanges",
-  "version": "0.0.0.0.3",
+  "version": "0.0.0-0.3",
   "description": "Node SDK and CLI shim for sagens agent BOX microVMs.",
   "license": "MIT",
   "type": "module",
@@ -32,9 +32,9 @@
     "ws": "^8.18.0"
   },
   "optionalDependencies": {
-    "@xenage/sanges-darwin-arm64": "0.0.0.0.3",
-    "@xenage/sanges-linux-arm64": "0.0.0.0.3",
-    "@xenage/sanges-linux-x64": "0.0.0.0.3"
+    "@xenage/sanges-darwin-arm64": "0.0.0-0.3",
+    "@xenage/sanges-linux-arm64": "0.0.0-0.3",
+    "@xenage/sanges-linux-x64": "0.0.0-0.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

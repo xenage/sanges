@@ -426,7 +426,7 @@ jobs:
           - os: macos-14
             platform: darwin-arm64
     env:
-      PACKAGE_VERSION: "0.0.0.0.3"
+      PACKAGE_VERSION: "0.0.0-0.3"
     steps:
       - uses: actions/checkout@v6
 
@@ -527,7 +527,7 @@ jobs:
       - test_smoke_node
     runs-on: xenage-kvm
     env:
-      PACKAGE_VERSION: "0.0.0.0.3"
+      PACKAGE_VERSION: "0.0.0-0.3"
     steps:
       - uses: actions/checkout@v6
 
@@ -606,6 +606,12 @@ jobs:
           import tomllib
           from pathlib import Path
 
+          def npm_version_for_tag(version: str) -> str:
+              parts = version.split(".")
+              if len(parts) <= 3:
+                  return version
+              return ".".join(parts[:3]) + "-" + ".".join(parts[3:])
+
           tag = os.environ["GITHUB_REF_NAME"]
           match = re.fullmatch(r"v?([0-9]+(?:\.[0-9]+)*(?:(?:a|b|rc)[0-9]+)?)", tag)
           if match is None:
@@ -614,6 +620,7 @@ jobs:
               )
 
           tag_version = match.group(1)
+          npm_version = npm_version_for_tag(tag_version)
           python_version = tomllib.loads(Path("python/pyproject.toml").read_text())["project"]["version"]
           node_package_paths = [
               Path("node/package.json"),
@@ -633,15 +640,16 @@ jobs:
           mismatched = {
               path: version
               for path, version in node_versions.items()
-              if version != tag_version
+              if version != npm_version
           }
           if mismatched:
               raise SystemExit(
-                  f"tag {tag!r} resolves to {tag_version}, but Node package versions differ: {mismatched}"
+                  f"tag {tag!r} maps to npm version {npm_version}, but Node package versions differ: {mismatched}"
               )
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
               handle.write(f"version={python_version}\n")
+              handle.write(f"npm_version={npm_version}\n")
           PY
 
       - name: Download release artifacts
@@ -732,7 +740,7 @@ jobs:
         if: steps.verify.outputs.should_release == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_KEY }}
-          PACKAGE_VERSION: ${{ steps.package_meta.outputs.version }}
+          PACKAGE_VERSION: ${{ steps.package_meta.outputs.npm_version }}
         run: |
           if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
             echo "NPM_KEY secret is not configured." >&2
