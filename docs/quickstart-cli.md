@@ -40,6 +40,17 @@ If you want exact syntax for a subcommand, the fast path is built-in help:
 "$BIN" help box fs
 ```
 
+## Named Images
+
+Named images let new BOXes start with preinstalled packages:
+
+```bash
+"$BIN" image build chromium --apk chromium --min-image-mib 1024
+"$BIN" box new --image chromium
+```
+
+Python and Node can build and use the same images natively through their SDKs; see [Python quickstart](quickstart-python.md#named-images) and [Node quickstart](quickstart-node.md#named-images).
+
 ## What to read next
 
 - Keep state across stop and restart: [Persistent workspaces](recipes/persistent-workspaces.md)

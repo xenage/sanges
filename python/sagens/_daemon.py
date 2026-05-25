@@ -10,7 +10,7 @@ from ._binary import resolve_host_binary
 from ._box import Box
 from ._client import BoxApiClient
 from ._decode import user_config_from_dict
-from ._models import BoxRecord
+from ._models import BoxRecord, VmImageManifest
 
 
 class Daemon:
@@ -95,13 +95,41 @@ class Daemon:
     def get_box(self, box_id: UUID | str) -> Box:
         return Box(self.client, self.client.get_box(box_id))
 
-    def create_box(self) -> Box:
-        return Box(self.client, self.client.create_box())
+    def create_box(self, image: str | None = None) -> Box:
+        return Box(self.client, self.client.create_box(image=image))
+
+    def build_image(
+        self,
+        name: str,
+        *,
+        apk: list[str] | None = None,
+        pip: list[str] | None = None,
+        npm: list[str] | None = None,
+        min_image_mib: int = 512,
+        force_refresh: bool = False,
+    ) -> VmImageManifest:
+        return self.client.build_image(
+            name,
+            apk=apk,
+            pip=pip,
+            npm=npm,
+            min_image_mib=min_image_mib,
+            force_refresh=force_refresh,
+        )
+
+    def list_images(self) -> list[VmImageManifest]:
+        return self.client.list_images()
+
+    def inspect_image(self, name: str) -> VmImageManifest:
+        return self.client.inspect_image(name)
+
+    def remove_image(self, name: str) -> None:
+        self.client.remove_image(name)
 
     def issue_box_credentials(self, box_id: UUID | str):
         return self.client.issue_box_credentials(box_id)
 
-    def connect_as_box(self, box_id: UUID | str, box_token: str | None):
+    def connect_as_box(self, box_id: UUID | str, box_token: str):
         return BoxApiClient.connect_as_box(self.client.endpoint, box_id, box_token)
 
     def admin_add(self):

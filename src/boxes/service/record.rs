@@ -43,7 +43,8 @@ impl LocalBoxService {
     pub(super) async fn create_box_record(
         &self,
         name: Option<String>,
-        settings: Option<super::super::BoxSettings>,
+        image: String,
+        settings: super::super::BoxSettings,
     ) -> Result<BoxRecord> {
         let box_id = Uuid::new_v4();
         let workspace = self
@@ -53,6 +54,7 @@ impl LocalBoxService {
         let record = BoxRecord {
             box_id,
             name,
+            image,
             status: BoxStatus::Created,
             settings,
             runtime_usage: None,

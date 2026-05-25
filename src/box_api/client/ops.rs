@@ -2,6 +2,8 @@
 mod admin;
 #[path = "ops/files.rs"]
 mod files;
+#[path = "ops/images.rs"]
+mod images;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::{Duration, Instant};
@@ -35,8 +37,13 @@ impl BoxApiClient {
     }
 
     pub async fn create_box(&self) -> Result<BoxRecord> {
+        self.create_box_from_image(None).await
+    }
+
+    pub async fn create_box_from_image(&self, image: Option<String>) -> Result<BoxRecord> {
         let request_id = self.next_request_id();
-        self.request_box(BoxRequest::NewBox { request_id }).await
+        self.request_box(BoxRequest::NewBox { request_id, image })
+            .await
     }
 
     pub async fn start_box(&self, box_id: uuid::Uuid) -> Result<BoxRecord> {

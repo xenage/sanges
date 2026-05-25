@@ -1,12 +1,13 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use sagens_host::auth::{AdminCredential, AdminStore, BoxCredentialStore, UserConfig};
 use sagens_host::backend::ShellDriver;
 use sagens_host::boxes::BoxManager;
-use sagens_host::config::IsolationMode;
 use sagens_host::protocol::ShellEvent;
 use sagens_host::serve_box_api_websocket;
+use sagens_host::{GuestConfig, GuestKernelFormat, ImageApiConfig};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -42,7 +43,7 @@ impl ShellDriver for StubShellDriver {
     }
 }
 
-pub(crate) async fn spawn_client_impl(isolation_mode: IsolationMode) -> sagens_host::BoxApiClient {
+pub(crate) async fn spawn_client_impl() -> sagens_host::BoxApiClient {
     let service: Arc<dyn BoxManager> = Arc::new(StubBoxManager::default());
     let state_dir = tempfile::tempdir().expect("tempdir").keep();
     let admin_store = Arc::new(AdminStore::new(&state_dir));
@@ -57,7 +58,7 @@ pub(crate) async fn spawn_client_impl(isolation_mode: IsolationMode) -> sagens_h
         service,
         admin_store,
         box_credential_store,
-        isolation_mode,
+        test_image_api_config(&state_dir),
     )
     .await
     .expect("server");
@@ -70,4 +71,22 @@ pub(crate) async fn spawn_client_impl(isolation_mode: IsolationMode) -> sagens_h
     sagens_host::BoxApiClient::connect(&config)
         .await
         .expect("client")
+}
+
+fn test_image_api_config(state_dir: &std::path::Path) -> ImageApiConfig {
+    ImageApiConfig {
+        state_dir: state_dir.to_path_buf(),
+        base_guest: GuestConfig {
+            kernel_image: state_dir.join("vmlinuz"),
+            kernel_format: GuestKernelFormat::Raw,
+            rootfs_image: state_dir.join("rootfs.raw"),
+            firmware: None,
+            guest_agent_path: state_dir.join("sagens-guest-agent"),
+            guest_vsock_port: 11_000,
+            boot_timeout: Duration::from_secs(1),
+            guest_uid: 1000,
+            guest_gid: 1000,
+            guest_tmpfs_mib: 64,
+        },
+    }
 }

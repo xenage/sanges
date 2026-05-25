@@ -50,12 +50,25 @@ impl BoxManager for StubBoxManager {
 
     async fn create_named_box(&self, name: Option<String>) -> sagens_host::Result<BoxRecord> {
         let mut record = new_box_record(name);
-        record.settings = Some(default_box_settings());
+        record.settings = default_box_settings();
         self.state
             .lock()
             .await
             .boxes
             .insert(record.box_id, record.clone());
+        Ok(record)
+    }
+
+    async fn create_box_from_image(&self, image: Option<String>) -> sagens_host::Result<BoxRecord> {
+        let mut record = self.create_named_box(None).await?;
+        if let Some(image) = image {
+            record.image = image;
+            self.state
+                .lock()
+                .await
+                .boxes
+                .insert(record.box_id, record.clone());
+        }
         Ok(record)
     }
 
@@ -66,7 +79,7 @@ impl BoxManager for StubBoxManager {
     ) -> sagens_host::Result<BoxRecord> {
         let mut state = self.state.lock().await;
         let record = state.boxes.get_mut(&box_id).expect("box");
-        let settings = record.settings.get_or_insert_with(default_box_settings);
+        let settings = &mut record.settings;
         match setting {
             BoxSettingValue::CpuCores { value } => settings.cpu_cores.current = value,
             BoxSettingValue::MemoryMb { value } => settings.memory_mb.current = value,
@@ -296,8 +309,18 @@ impl BoxManager for StubBoxManager {
                 )));
             }
         }
-        let record = self.create_named_box(new_box_name).await?;
+        let source_image = {
+            let state = self.state.lock().await;
+            state
+                .boxes
+                .get(&box_id)
+                .map(|record| record.image.clone())
+                .unwrap_or_else(|| sagens_host::images::BASE_IMAGE_NAME.into())
+        };
+        let mut record = self.create_named_box(new_box_name).await?;
+        record.image = source_image;
         let mut state = self.state.lock().await;
+        state.boxes.insert(record.box_id, record.clone());
         let snapshot = state
             .checkpoint_snapshots
             .get(&(box_id, checkpoint_id.to_string()))

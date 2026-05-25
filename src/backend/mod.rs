@@ -17,6 +17,7 @@ pub struct BackendLaunchRequest {
     pub sandbox_id: Uuid,
     pub run_layout: RunLayout,
     pub guest: GuestConfig,
+    pub cache_image: Option<std::path::PathBuf>,
     pub policy: SandboxPolicy,
     pub workspace: WorkspaceLease,
     pub hardening: HardeningConfig,

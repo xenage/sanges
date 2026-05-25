@@ -10,7 +10,13 @@ from .support import smoke_server
 
 def test_websocket_contract_preserves_exec_and_file_flow() -> None:
     with smoke_server() as daemon:
+        base_image = daemon.inspect_image("base")
+        assert base_image.name == "base"
+        assert "python3" in base_image.apk
+
         box = daemon.create_box()
+        assert box.record.image == "base"
+        assert daemon.create_box(image="base").record.image == "base"
         box.start()
 
         exec_result = box.exec_bash("touch tracked.txt")
@@ -46,6 +52,8 @@ def test_websocket_supports_shell_checkpoint_and_box_auth() -> None:
         box_client = daemon.connect_as_box(box.box_id, bundle.box_token)
         with pytest.raises(SagensError):
             box_client.list_boxes()
+        with pytest.raises(SagensError):
+            box_client.start_box(box.box_id)
 
         box_shell = box_client.open_bash(box.box_id)
         box_shell.send_input("shell-ok\nexit\n")
@@ -56,12 +64,12 @@ def test_websocket_supports_shell_checkpoint_and_box_auth() -> None:
         box_client.close()
 
 
-def test_secure_mode_rejects_uuid_only_box_auth_and_accepts_token() -> None:
-    with smoke_server("secure") as daemon:
+def test_box_auth_rejects_uuid_only_and_accepts_token() -> None:
+    with smoke_server() as daemon:
         box = daemon.create_box()
 
         with pytest.raises(SagensError):
-            daemon.connect_as_box(box.box_id, None)
+            daemon.connect_as_box(box.box_id, "")
 
         with pytest.raises(SagensError):
             daemon.connect_as_box(box.box_id, "wrong-token")

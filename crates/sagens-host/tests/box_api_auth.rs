@@ -5,8 +5,9 @@ use std::collections::BTreeMap;
 use base64::Engine as _;
 use sagens_host::ExecExit;
 use sagens_host::box_api::InteractiveTarget;
+use sagens_host::boxes::BoxSettingValue;
 
-use support::{create_box, open_shell, spawn_client, spawn_secure_client, start_box};
+use support::{create_box, open_shell, spawn_client, start_box};
 
 #[tokio::test]
 async fn websocket_serves_lifecycle_exec_shell_fs_and_box_scoped_auth() {
@@ -79,14 +80,30 @@ async fn websocket_serves_lifecycle_exec_shell_fs_and_box_scoped_auth() {
         .issue_box_credentials(box_id)
         .await
         .expect("box credentials");
-    let box_client = sagens_host::BoxApiClient::connect_as_box(
-        client.endpoint(),
-        box_id,
-        Some(bundle.box_token),
-    )
-    .await
-    .expect("box auth");
+    let box_client =
+        sagens_host::BoxApiClient::connect_as_box(client.endpoint(), box_id, bundle.box_token)
+            .await
+            .expect("box auth");
     assert!(box_client.list_boxes().await.is_err());
+    assert!(box_client.start_box(box_id).await.is_err());
+    assert!(box_client.stop_box(box_id).await.is_err());
+    assert!(box_client.remove_box(box_id).await.is_err());
+    assert!(
+        box_client
+            .set_box_setting(box_id, BoxSettingValue::CpuCores { value: 1 })
+            .await
+            .is_err()
+    );
+    assert!(
+        box_client
+            .checkpoint_fork(
+                box_id,
+                checkpoint.summary.checkpoint_id.clone(),
+                Some("fork".into())
+            )
+            .await
+            .is_err()
+    );
     let box_shell = box_client
         .open_shell(box_id, InteractiveTarget::Bash)
         .await
@@ -109,32 +126,26 @@ async fn websocket_serves_lifecycle_exec_shell_fs_and_box_scoped_auth() {
 }
 
 #[tokio::test]
-async fn secure_mode_rejects_uuid_only_box_auth_and_accepts_box_tokens() {
-    let client = spawn_secure_client().await;
+async fn box_auth_rejects_uuid_only_credentials_and_accepts_box_tokens() {
+    let client = spawn_client().await;
     let box_id = create_box(&client).await;
 
     let uuid_only =
-        sagens_host::BoxApiClient::connect_as_box(client.endpoint(), box_id, None).await;
+        sagens_host::BoxApiClient::connect_as_box(client.endpoint(), box_id, String::new()).await;
     assert!(uuid_only.is_err());
 
-    let wrong_token = sagens_host::BoxApiClient::connect_as_box(
-        client.endpoint(),
-        box_id,
-        Some("wrong-token".into()),
-    )
-    .await;
+    let wrong_token =
+        sagens_host::BoxApiClient::connect_as_box(client.endpoint(), box_id, "wrong-token".into())
+            .await;
     assert!(wrong_token.is_err());
 
     let bundle = client
         .issue_box_credentials(box_id)
         .await
         .expect("box credentials");
-    let box_client = sagens_host::BoxApiClient::connect_as_box(
-        client.endpoint(),
-        box_id,
-        Some(bundle.box_token),
-    )
-    .await
-    .expect("secure box auth");
+    let box_client =
+        sagens_host::BoxApiClient::connect_as_box(client.endpoint(), box_id, bundle.box_token)
+            .await
+            .expect("box auth");
     assert!(box_client.list_boxes().await.is_err());
 }

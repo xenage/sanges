@@ -5,8 +5,8 @@ use std::time::Duration;
 use pyo3::prelude::*;
 use sagens_host::auth::{AdminCredential, AdminStore, BoxCredentialStore, UserConfig};
 use sagens_host::boxes::BoxManager;
-use sagens_host::config::IsolationMode;
 use sagens_host::serve_box_api_websocket;
+use sagens_host::{GuestConfig, GuestKernelFormat, ImageApiConfig};
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
@@ -41,13 +41,12 @@ impl Drop for TestServerHandle {
 }
 
 #[pyfunction]
-pub fn start_test_server(isolation_mode: Option<String>) -> PyResult<TestServerHandle> {
-    let isolation_mode = parse_mode(isolation_mode.as_deref()).map_err(runtime_error)?;
+pub fn start_test_server() -> PyResult<TestServerHandle> {
     let (ready_tx, ready_rx) = sync_channel(1);
     let (stop_tx, stop_rx) = oneshot::channel();
     let thread = std::thread::Builder::new()
         .name("sagens-python-test-server".into())
-        .spawn(move || run_server_thread(isolation_mode, ready_tx, stop_rx))
+        .spawn(move || run_server_thread(ready_tx, stop_rx))
         .map_err(runtime_error)?;
     let user_config_json = match ready_rx.recv_timeout(READY_TIMEOUT) {
         Ok(result) => result.map_err(runtime_error)?,
@@ -81,7 +80,6 @@ fn close_handle(handle: &mut TestServerHandle) -> sagens_host::Result<()> {
 }
 
 fn run_server_thread(
-    isolation_mode: IsolationMode,
     ready_tx: SyncSender<sagens_host::Result<String>>,
     stop_rx: oneshot::Receiver<()>,
 ) -> sagens_host::Result<()> {
@@ -91,11 +89,10 @@ fn run_server_thread(
         .map_err(|error| {
             sagens_host::SandboxError::io("building python test server runtime", error)
         })?;
-    runtime.block_on(async move { run_server(isolation_mode, ready_tx, stop_rx).await })
+    runtime.block_on(async move { run_server(ready_tx, stop_rx).await })
 }
 
 async fn run_server(
-    isolation_mode: IsolationMode,
     ready_tx: SyncSender<sagens_host::Result<String>>,
     stop_rx: oneshot::Receiver<()>,
 ) -> sagens_host::Result<()> {
@@ -115,7 +112,7 @@ async fn run_server(
         service,
         admin_store,
         box_credential_store,
-        isolation_mode,
+        test_image_api_config(&state_dir),
     )
     .await?;
     let config = UserConfig {
@@ -131,16 +128,24 @@ async fn run_server(
     server.wait().await
 }
 
-fn parse_mode(raw: Option<&str>) -> sagens_host::Result<IsolationMode> {
-    match raw.unwrap_or("compat") {
-        "compat" => Ok(IsolationMode::Compat),
-        "secure" => Ok(IsolationMode::Secure),
-        other => Err(sagens_host::SandboxError::invalid(format!(
-            "unsupported isolation mode {other}"
-        ))),
-    }
-}
-
 fn runtime_error_string(error: impl std::fmt::Display) -> sagens_host::SandboxError {
     sagens_host::SandboxError::backend(error.to_string())
+}
+
+fn test_image_api_config(state_dir: &std::path::Path) -> ImageApiConfig {
+    ImageApiConfig {
+        state_dir: state_dir.to_path_buf(),
+        base_guest: GuestConfig {
+            kernel_image: state_dir.join("vmlinuz"),
+            kernel_format: GuestKernelFormat::Raw,
+            rootfs_image: state_dir.join("rootfs.raw"),
+            firmware: None,
+            guest_agent_path: state_dir.join("sagens-guest-agent"),
+            guest_vsock_port: 11_000,
+            boot_timeout: Duration::from_secs(1),
+            guest_uid: 1000,
+            guest_gid: 1000,
+            guest_tmpfs_mib: 64,
+        },
+    }
 }

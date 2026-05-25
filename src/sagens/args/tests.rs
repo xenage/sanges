@@ -1,4 +1,7 @@
-use super::{BoxCommand, BoxSettingValue, Command, DaemonCommand, HelpTopic, parse, render_help};
+use super::{
+    BoxCommand, BoxSettingValue, Command, DaemonCommand, HelpTopic, ImageCommand, parse,
+    render_help,
+};
 
 fn args(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| value.to_string()).collect()
@@ -57,6 +60,49 @@ fn keeps_box_ps_as_alias_for_list() {
     let command = parse(args(&["box", "ps"])).expect("parse");
 
     assert!(matches!(command, Command::Box(BoxCommand::List)));
+}
+
+#[test]
+fn parses_box_new_with_image() {
+    let command = parse(args(&["box", "new", "--image", "chromium"])).expect("parse");
+
+    match command {
+        Command::Box(BoxCommand::New(command)) => {
+            assert_eq!(command.image.as_deref(), Some("chromium"));
+        }
+        _ => panic!("unexpected command"),
+    }
+}
+
+#[test]
+fn parses_image_build_command() {
+    let command = parse(args(&[
+        "image",
+        "build",
+        "chromium",
+        "--apk",
+        "chromium",
+        "--pip",
+        "packaging==25.0",
+        "--npm",
+        "is-number@7.0.0",
+        "--min-image-mib",
+        "2GiB",
+        "--force-refresh",
+    ]))
+    .expect("parse");
+
+    match command {
+        Command::Image(ImageCommand::Build(command)) => {
+            assert_eq!(command.name, "chromium");
+            assert_eq!(command.apk, vec!["chromium"]);
+            assert_eq!(command.pip, vec!["packaging==25.0"]);
+            assert_eq!(command.npm, vec!["is-number@7.0.0"]);
+            assert_eq!(command.min_image_mib, 2048);
+            assert!(command.force_refresh);
+        }
+        _ => panic!("unexpected command"),
+    }
 }
 
 #[test]

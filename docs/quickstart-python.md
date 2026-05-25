@@ -37,6 +37,29 @@ PY
 
 If you already have an existing daemon, you do not need to spawn a new one. You can connect with `Daemon.connect(...)` or load a saved config with `Daemon.from_config(...)`.
 
+## Named Images
+
+Use named images when every BOX should start with the same package set. The SDK builds the image through the daemon protocol; it does not shell out to the CLI.
+
+```python
+from tempfile import TemporaryDirectory
+
+from sagens import Daemon
+
+with TemporaryDirectory() as state_dir:
+    with Daemon.start(state_dir=state_dir) as daemon:
+        image = daemon.build_image(
+            "chromium",
+            apk=["chromium"],
+            min_image_mib=1024,
+        )
+        first = daemon.create_box(image=image.name)
+        second = daemon.create_box(image=image.name)
+        print(first.record.image, second.record.image)
+```
+
+For a full Chromium smoke, see [`python/examples/named_images.py`](../python/examples/named_images.py).
+
 ## What to read next
 
 - Keep state across restart: [Persistent workspaces](recipes/persistent-workspaces.md)

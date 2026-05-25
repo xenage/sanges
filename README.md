@@ -14,20 +14,23 @@ The bet is simple: a user session should not be a shared shell. It should be a d
 
 ## Supported hosts and SDK runtimes
 
-`sagens` currently publishes and tests the following host matrix:
+`sagens` currently ships one secure host path and one explicit insecure dev/test path:
 
 | Host OS | CPU | Python package | Node package | microVM backend |
 | --- | --- | --- | --- | --- |
-| macOS | arm64 (Apple Silicon) | Python 3.11+ | Node 20+ | vendored `libkrun` on Apple's Hypervisor Framework (HVF) with bundled `KRUN_EFI.silent.fd` firmware |
-| Linux | x86_64 | Python 3.11+ | Node 20+ | vendored `libkrun` on KVM with a guest kernel materialized from `libkrunfw-x86_64` |
-| Linux | arm64 / aarch64 | Python 3.11+ | Node 20+ | vendored `libkrun` on KVM with a guest kernel materialized from `libkrunfw-aarch64` |
+| Linux | x86_64 | Python 3.11+ | Node 20+ | vendored `libkrun` on KVM with a direct-boot Alpine guest kernel and secure host sandboxing |
+| Linux | arm64 / aarch64 | Python 3.11+ | Node 20+ | vendored `libkrun` on KVM with a direct-boot Alpine guest kernel and secure host sandboxing |
+| macOS | arm64 (Apple Silicon) | Python 3.11+ | Node 20+ | dev/test only through explicit insecure compat opt-in; secure host isolation is not shipped on this host |
 
 Notes:
 
-- Linux full microVM runtime requires `/dev/kvm`.
+- Secure host isolation is fail-closed. If Linux secure prerequisites are missing, `sagens` no longer silently falls back to compatibility mode.
+- Linux secure mode requires `/dev/kvm`, delegated cgroup access through `SAGENS_CGROUP_PARENT`, and Linux Landlock support.
+- Linux secure startup now runs a built-in runner harness before the daemon starts and hard-fails if namespaces, chroot, Landlock, or seccomp cannot be applied on the current host.
+- Insecure compatibility mode is dev/test only and requires `SAGENS_ISOLATION_MODE=compat` together with `SAGENS_INSECURE_COMPAT=1`.
 - The Python package requires `>=3.11`, is built with `pyo3` `abi3-py311`, and is classified for Python `3.11`, `3.12`, and `3.13`.
 - The Node package declares `"engines": { "node": ">=20" }`. CI currently exercises Node `22`.
-- Windows and macOS `x86_64` are not supported by the current libkrun-only backend.
+- Windows and macOS `x86_64` are not supported by the current backend.
 - For the per-host runtime breakdown, see [Support matrix](docs/support-matrix.md).
 
 ## What you can build
@@ -36,6 +39,7 @@ Notes:
 - A support or data-analysis chat where uploaded files stay inside that user's BOX.
 - A multi-agent system where each worker receives only the BOX credentials it needs.
 - A hosted agent lab where runtimes are disposable but user work survives stop, restart, and restore.
+- A prebuilt image workflow where package-heavy runtimes are prepared once and reused by many BOXes.
 
 ## Three ways in
 
@@ -86,6 +90,13 @@ PY
 
 That is the product boundary: your control plane can manage many BOXes, while each agent can receive a credential scoped to only one user's BOX.
 
+Python can also build named images natively:
+
+```python
+image = daemon.build_image("chromium", apk=["chromium"], min_image_mib=1024)
+box = daemon.create_box(image=image.name)
+```
+
 ### Node: the same product boundary from JavaScript
 
 The Node package ships the SDK and installs the right platform host binary through npm optional dependencies. Your users do not build libkrun, download runtime assets, or share a host shell.
@@ -130,6 +141,17 @@ JS
 
 The public package is `@xenage/sanges`; platform binary packages such as `@xenage/sanges-darwin-arm64` are pulled automatically by npm for supported hosts.
 
+Node exposes the same image API:
+
+```ts
+const image = await daemon.buildImage({
+  name: "chromium",
+  apk: ["chromium"],
+  minImageMib: 1024,
+});
+const box = await daemon.createBox({ image: image.name });
+```
+
 ### CLI: create a user BOX by hand
 
 The CLI is the fastest way to see the product model end to end. This example creates one BOX for one user, writes a request into the workspace, runs an agent-shaped command, checkpoints the result, and stops the runtime while keeping the workspace.
@@ -165,7 +187,7 @@ You can then start the same BOX again to run Python, and reconfigure it while it
 "$BIN" box set "$BOX_ID" fs 1GiB
 "$BIN" box set "$BOX_ID" cpu 2
 
-# Choose one of the following lines.
+# Compatibility mode only. Secure mode hard-rejects guest networking.
 "$BIN" box set "$BOX_ID" network enabled
 "$BIN" box set "$BOX_ID" network disabled
 

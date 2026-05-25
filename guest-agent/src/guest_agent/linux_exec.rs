@@ -12,6 +12,7 @@ use crate::protocol::{ExecExit, ExecRequest, OutputStream, ShellRequest};
 use crate::{Result, SandboxError};
 
 use super::linux_boot::BootConfig;
+use super::linux_seccomp::apply_no_network_seccomp;
 use super::{pty, rpc};
 
 #[derive(Clone)]
@@ -62,6 +63,9 @@ pub(crate) async fn open_shell(
                 config.max_open_files,
                 config.max_file_size_bytes,
             )?;
+            if !config.network_enabled {
+                apply_no_network_seccomp()?;
+            }
             if libc::setsid() < 0 {
                 return Err(std::io::Error::last_os_error());
             }
@@ -117,6 +121,9 @@ pub(crate) fn spawn_exec(
                 config.max_open_files,
                 config.max_file_size_bytes,
             )?;
+            if !config.network_enabled {
+                apply_no_network_seccomp()?;
+            }
             if libc::setsid() < 0 {
                 return Err(std::io::Error::last_os_error());
             }

@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use crate::config::{IsolationMode, SandboxPolicy};
 use crate::host_log;
+use crate::images::{BASE_IMAGE_NAME, ImageStore, validate_image_name};
 use crate::protocol::{CommandStream, ExecRequest, ShellRequest};
 use crate::runtime::SandboxService;
 use crate::workspace::{
@@ -20,7 +21,7 @@ use crate::workspace::{
 use crate::{Result, SandboxError, WorkspaceConfig};
 
 use super::helpers::{missing_runtime_session, now_ms};
-use super::{BoxRecord, BoxSettingValue, BoxStatus, BoxStore};
+use super::{BoxRecord, BoxSettingValue, BoxSettings, BoxStatus, BoxStore};
 use policy::{box_policy, validate_numeric_setting};
 
 pub use manager::BoxManager;
@@ -53,11 +54,22 @@ impl BoxManager for LocalBoxService {
     }
 
     async fn create_box(&self) -> Result<BoxRecord> {
-        self.create_named_box(None).await
+        self.create_box_from_image(None).await
     }
 
     async fn create_named_box(&self, name: Option<String>) -> Result<BoxRecord> {
-        self.create_box_record(name, None).await
+        self.create_box_record(name, BASE_IMAGE_NAME.into(), BoxSettings::default())
+            .await
+    }
+
+    async fn create_box_from_image(&self, image: Option<String>) -> Result<BoxRecord> {
+        let image = image.unwrap_or_else(|| BASE_IMAGE_NAME.into());
+        validate_image_name(&image)?;
+        if image != BASE_IMAGE_NAME {
+            ImageStore::new(&self.state_dir).inspect(&image)?;
+        }
+        self.create_box_record(None, image, BoxSettings::default())
+            .await
     }
 
     async fn set_box_setting(&self, box_id: Uuid, setting: BoxSettingValue) -> Result<BoxRecord> {
@@ -67,9 +79,7 @@ impl BoxManager for LocalBoxService {
                 "BOX {box_id} must be stopped before updating settings"
             )));
         }
-        let settings = record.settings.as_mut().ok_or_else(|| {
-            SandboxError::backend(format!("BOX {box_id} is missing persisted settings"))
-        })?;
+        let settings = &mut record.settings;
         match setting {
             BoxSettingValue::CpuCores { value } => {
                 validate_numeric_setting("cpu_cores", value, settings.cpu_cores.max, 1)?;
@@ -117,6 +127,7 @@ impl BoxManager for LocalBoxService {
             .runtime
             .create_sandbox(crate::config::SandboxSpec {
                 workspace_id: box_id.to_string(),
+                image: record.image.clone(),
                 policy: box_policy(&record, self.default_policy.timeout_ms)?,
                 restore_commit: None,
             })
@@ -308,7 +319,7 @@ impl BoxManager for LocalBoxService {
     ) -> Result<BoxRecord> {
         let source = self.read_box(box_id).await?;
         let record = self
-            .create_box_record(new_box_name, source.settings.clone())
+            .create_box_record(new_box_name, source.image.clone(), source.settings.clone())
             .await?;
         self.workspace
             .fork_workspace(

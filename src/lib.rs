@@ -27,6 +27,10 @@ pub mod host_hardening;
 #[doc(hidden)]
 pub mod host_log;
 #[doc(hidden)]
+pub mod images;
+#[doc(hidden)]
+pub mod private_fs;
+#[doc(hidden)]
 pub mod protocol;
 #[doc(hidden)]
 pub mod runtime;
@@ -41,7 +45,7 @@ pub use auth::{
 };
 pub use box_api::{
     BoxApiClient, BoxApiServerHandle, BoxEvent, BoxRequest, BoxResponse, BoxShell, ClientMessage,
-    InteractiveTarget as BoxApiInteractiveTarget, Principal, ServerMessage,
+    ImageApiConfig, InteractiveTarget as BoxApiInteractiveTarget, Principal, ServerMessage,
     serve_box_api_websocket,
 };
 pub use boxes::{BoxRecord, BoxRuntimeUsage, BoxSettingValue, BoxSettings, BoxStatus};
@@ -55,6 +59,7 @@ pub use daemon_api::{
 };
 pub use embedding::{EmbeddedDaemonConfig, EmbeddedDaemonHandle, EmbeddedDaemonInfo};
 pub use error::{Result, SandboxError};
+pub use images::VmImageManifest;
 pub use protocol::{CompletedExecution, ExecExit, OutputStream, exit_code as exec_exit_code};
 pub use workspace::{
     CheckpointRestoreMode, FileKind, FileNode, ReadFileResult, WorkspaceChange,

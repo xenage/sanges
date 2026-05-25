@@ -54,7 +54,7 @@ jobs:
 
       - name: Build Node SDK
         run: |
-          npm ci --prefix node
+          npm ci --prefix node --omit=optional
           npm run --prefix node build
 
       - name: Run tests

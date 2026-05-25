@@ -10,11 +10,25 @@ export async function importSagens() {
 export async function withDaemon(callback) {
   const { Daemon } = await importSagens();
   const stateDir = await mkdtemp(join(tmpdir(), "sagens-node-test-"));
+  const previousMode = process.env.SAGENS_ISOLATION_MODE;
+  const previousCompat = process.env.SAGENS_INSECURE_COMPAT;
+  process.env.SAGENS_ISOLATION_MODE = "compat";
+  process.env.SAGENS_INSECURE_COMPAT = "1";
   const daemon = await Daemon.start({ stateDir });
   try {
     return await callback(daemon, stateDir);
   } finally {
     await daemon.close().catch(() => {});
+    if (previousMode === undefined) {
+      delete process.env.SAGENS_ISOLATION_MODE;
+    } else {
+      process.env.SAGENS_ISOLATION_MODE = previousMode;
+    }
+    if (previousCompat === undefined) {
+      delete process.env.SAGENS_INSECURE_COMPAT;
+    } else {
+      process.env.SAGENS_INSECURE_COMPAT = previousCompat;
+    }
     await rm(stateDir, { recursive: true, force: true });
   }
 }

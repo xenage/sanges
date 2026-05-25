@@ -45,6 +45,7 @@ export interface BoxRuntimeUsage {
 export interface BoxRecord {
   boxId: string;
   name?: string | null;
+  image: string;
   status: BoxStatus;
   settings?: BoxSettings | null;
   runtimeUsage?: BoxRuntimeUsage | null;
@@ -54,6 +55,30 @@ export interface BoxRecord {
   lastStartAtMs?: number | null;
   lastStopAtMs?: number | null;
   lastError?: string | null;
+}
+
+export interface VmImageManifest {
+  version: number;
+  name: string;
+  arch: string;
+  alpineVersion: string;
+  createdAtMs: number;
+  apk: string[];
+  pip: string[];
+  npm: string[];
+  kernelImage: string;
+  rootfsImage: string;
+  cacheImage?: string | null;
+  packageCount: number;
+}
+
+export interface ImageBuildOptions {
+  name: string;
+  apk?: string[];
+  pip?: string[];
+  npm?: string[];
+  minImageMib?: number;
+  forceRefresh?: boolean;
 }
 
 export interface ExecExit {

@@ -13,7 +13,7 @@ const BASE_URL: &str = "https://dl-cdn.alpinelinux.org/alpine/v3.23";
 const ALPINE_VERSION: &str = "3.23.4";
 const ALPINE_RELEASE_KEY_URL: &str = "https://alpinelinux.org/keys/ncopa.asc";
 const EXPECTED_SIGNING_FINGERPRINT: &str = "0482D84022F52DF1C4E7CD43293ACD0907D9495A";
-const WANTED_PACKAGES: &[&str] = &[
+const BASE_PACKAGES: &[&str] = &[
     "bash",
     "python3",
     "py3-pip",

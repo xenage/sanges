@@ -6,6 +6,9 @@ use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+use crate::private_fs::{
+    ensure_private_dir, validate_private_file_permissions, write_private_file,
+};
 use crate::{Result, SandboxError};
 
 const USER_CONFIG_VERSION: u32 = 1;
@@ -195,16 +198,16 @@ impl AdminStore {
 
     async fn write_registry(&self, registry: &AdminRegistry) -> Result<()> {
         if let Some(parent) = self.path.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|error| SandboxError::io("creating admin registry directory", error))?;
+            ensure_private_dir(parent, "creating admin registry directory")?;
         }
         let bytes = serde_json::to_vec_pretty(registry)
             .map_err(|error| SandboxError::json("encoding admin registry", error))?;
-        tokio::fs::write(&self.path, bytes)
-            .await
-            .map_err(|error| SandboxError::io("writing admin registry", error))?;
-        set_private_file_permissions(&self.path).await
+        write_private_file(
+            &self.path,
+            &bytes,
+            "creating admin registry directory",
+            "writing admin registry",
+        )
     }
 }
 
@@ -285,21 +288,21 @@ impl BoxCredentialStore {
 
     async fn write_registry(&self, registry: &BoxCredentialRegistry) -> Result<()> {
         if let Some(parent) = self.path.parent() {
-            tokio::fs::create_dir_all(parent).await.map_err(|error| {
-                SandboxError::io("creating box credential registry directory", error)
-            })?;
+            ensure_private_dir(parent, "creating box credential registry directory")?;
         }
         let bytes = serde_json::to_vec_pretty(registry)
             .map_err(|error| SandboxError::json("encoding box credential registry", error))?;
-        tokio::fs::write(&self.path, bytes)
-            .await
-            .map_err(|error| SandboxError::io("writing box credential registry", error))?;
-        set_private_file_permissions(&self.path).await
+        write_private_file(
+            &self.path,
+            &bytes,
+            "creating box credential registry directory",
+            "writing box credential registry",
+        )
     }
 }
 
 pub async fn read_user_config(path: &Path) -> Result<UserConfig> {
-    validate_user_config_permissions(path).await?;
+    validate_private_file_permissions(path, "sagens user config")?;
     let bytes = tokio::fs::read(path)
         .await
         .map_err(|error| SandboxError::io("reading sagens user config", error))?;
@@ -309,16 +312,16 @@ pub async fn read_user_config(path: &Path) -> Result<UserConfig> {
 
 pub async fn write_user_config(path: &Path, config: &UserConfig) -> Result<()> {
     if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|error| SandboxError::io("creating sagens config directory", error))?;
+        ensure_private_dir(parent, "creating sagens config directory")?;
     }
     let bytes = serde_json::to_vec_pretty(config)
         .map_err(|error| SandboxError::json("encoding sagens user config", error))?;
-    tokio::fs::write(path, bytes)
-        .await
-        .map_err(|error| SandboxError::io("writing sagens user config", error))?;
-    set_user_config_permissions(path).await
+    write_private_file(
+        path,
+        &bytes,
+        "creating sagens config directory",
+        "writing sagens user config",
+    )
 }
 
 fn new_record(credential: &AdminCredential) -> AdminRecord {
@@ -352,42 +355,6 @@ fn now_ms() -> u64 {
         Ok(duration) => duration.as_millis() as u64,
         Err(_) => 0,
     }
-}
-
-async fn set_user_config_permissions(path: &Path) -> Result<()> {
-    set_private_file_permissions(path).await
-}
-
-async fn set_private_file_permissions(path: &Path) -> Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        let permissions = std::fs::Permissions::from_mode(0o600);
-        tokio::fs::set_permissions(path, permissions)
-            .await
-            .map_err(|error| SandboxError::io("setting sagens user config permissions", error))?;
-    }
-    Ok(())
-}
-
-async fn validate_user_config_permissions(path: &Path) -> Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        let metadata = tokio::fs::metadata(path)
-            .await
-            .map_err(|error| SandboxError::io("reading sagens user config metadata", error))?;
-        let mode = metadata.permissions().mode() & 0o777;
-        if mode & 0o077 != 0 {
-            return Err(SandboxError::invalid(format!(
-                "sagens user config {} must have 0600 permissions",
-                path.display()
-            )));
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

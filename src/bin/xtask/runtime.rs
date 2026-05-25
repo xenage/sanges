@@ -50,15 +50,7 @@ pub(super) fn build_guest_artifacts(
         .arg("--output-dir")
         .arg(&output_dir);
     run(command, "building Alpine guest artifacts")?;
-    if matches!(
-        (platform.os, platform.arch),
-        (PlatformOs::Linux, PlatformArch::X86_64)
-    ) {
-        libkrunfw_kernel::materialize_linux_x86_64_guest_kernel(&work_dir, &output_dir)?;
-    }
-    if platform.arch == PlatformArch::Aarch64 {
-        libkrunfw_kernel::materialize_aarch64_guest_kernel(&work_dir, &output_dir)?;
-    }
+    materialize_platform_kernel(platform, &work_dir, &output_dir)?;
     Ok(())
 }
 
@@ -105,6 +97,17 @@ fn resolve_firmware(root: &Path, platform: Platform) -> anyhow::Result<Option<Pa
         firmware.display()
     );
     Ok(Some(firmware))
+}
+
+fn materialize_platform_kernel(
+    platform: Platform,
+    work_dir: &Path,
+    output_dir: &Path,
+) -> anyhow::Result<()> {
+    if platform.os == PlatformOs::Macos && platform.arch == PlatformArch::Aarch64 {
+        return libkrunfw_kernel::materialize_aarch64_guest_kernel(work_dir, output_dir);
+    }
+    Ok(())
 }
 
 fn build_guest_agent(root: &Path, platform: Platform, profile: Profile) -> anyhow::Result<()> {

@@ -1,16 +1,10 @@
 use uuid::Uuid;
 
-use sagens_host::box_api::InteractiveTarget;
-use sagens_host::config::IsolationMode;
-
 use super::spawn::spawn_client_impl;
+use sagens_host::box_api::InteractiveTarget;
 
 pub async fn spawn_client() -> sagens_host::BoxApiClient {
-    spawn_client_impl(IsolationMode::Compat).await
-}
-
-pub async fn spawn_secure_client() -> sagens_host::BoxApiClient {
-    spawn_client_impl(IsolationMode::Secure).await
+    spawn_client_impl().await
 }
 
 pub async fn create_box(client: &sagens_host::BoxApiClient) -> Uuid {

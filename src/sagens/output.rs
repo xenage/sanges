@@ -12,12 +12,13 @@ use std::io::{self, Write};
 
 use crate::boxes::BoxRecord;
 use crate::config::IsolationMode;
+use crate::images::VmImageManifest;
 use crate::sagens::ui::{Align, BadgeStyle, Cell, Theme};
 use crate::sagens::update::{SelfUpdateAction, SelfUpdateOutcome};
 
 use self::cells::{isolation_mode_label, styled_status_cell};
 use self::format::{
-    fallback_settings, format_box_cpu_setting, format_box_fs_setting, format_box_memory_setting,
+    format_box_cpu_setting, format_box_fs_setting, format_box_memory_setting,
     format_box_network_setting, format_box_process_setting,
 };
 pub use self::lists::{
@@ -100,8 +101,7 @@ pub fn print_update_message(outcome: &SelfUpdateOutcome) -> io::Result<()> {
 
 pub fn print_box_action(action: &str, box_record: &BoxRecord) -> io::Result<()> {
     let theme = Theme::stdout();
-    let fallback = fallback_settings();
-    let settings = box_record.settings.as_ref().unwrap_or(&fallback);
+    let settings = &box_record.settings;
     println!(
         "{} {}",
         theme.title("BOX"),
@@ -129,6 +129,7 @@ pub fn print_box_action(action: &str, box_record: &BoxRecord) -> io::Result<()> 
                     Cell::plain("Status"),
                     styled_status_cell(&theme, box_record.status),
                 ],
+                vec![Cell::plain("Image"), Cell::plain(box_record.image.clone())],
                 vec![
                     Cell::plain("CPU"),
                     Cell::plain(format_box_cpu_setting(box_record, settings)),
@@ -163,13 +164,24 @@ pub fn print_box_action(action: &str, box_record: &BoxRecord) -> io::Result<()> 
     io::stdout().flush()
 }
 
-pub fn print_box_table(boxes: &[BoxRecord]) -> io::Result<()> {
+pub fn print_box_table(
+    boxes: &[BoxRecord],
+    isolation_mode: Option<IsolationMode>,
+) -> io::Result<()> {
     let theme = Theme::stdout();
-    println!(
-        "{} {}",
-        theme.title("BOX inventory"),
-        theme.badge(&format!("{} total", boxes.len()), BadgeStyle::Info)
-    );
+    match isolation_mode {
+        Some(mode) => println!(
+            "{} {}  {}",
+            theme.title("BOX inventory"),
+            theme.badge(&format!("{} total", boxes.len()), BadgeStyle::Info),
+            theme.dim(format!("mode={}", isolation_mode_label(mode))),
+        ),
+        None => println!(
+            "{} {}",
+            theme.title("BOX inventory"),
+            theme.badge(&format!("{} total", boxes.len()), BadgeStyle::Info)
+        ),
+    }
     println!();
     if boxes.is_empty() {
         println!(
@@ -182,14 +194,14 @@ pub fn print_box_table(boxes: &[BoxRecord]) -> io::Result<()> {
     let rows = boxes
         .iter()
         .map(|box_record| {
-            let fallback = fallback_settings();
-            let settings = box_record.settings.as_ref().unwrap_or(&fallback);
+            let settings = &box_record.settings;
             vec![
                 Cell::rendered(
                     box_record.box_id.to_string(),
                     theme.code(box_record.box_id.to_string()),
                     Align::Left,
                 ),
+                Cell::plain(box_record.image.clone()),
                 styled_status_cell(&theme, box_record.status),
                 Cell::plain(format_box_cpu_setting(box_record, settings)),
                 Cell::plain(format_box_memory_setting(box_record, settings)),
@@ -205,6 +217,7 @@ pub fn print_box_table(boxes: &[BoxRecord]) -> io::Result<()> {
         theme.table(
             vec![
                 Cell::plain("BOX"),
+                Cell::plain("IMAGE"),
                 Cell::plain("STATUS"),
                 Cell::plain("CPU"),
                 Cell::plain("RAM"),
@@ -227,4 +240,110 @@ pub fn print_removed(box_id: uuid::Uuid) -> io::Result<()> {
         theme.code(box_id.to_string())
     );
     io::stdout().flush()
+}
+
+pub fn print_image_built(manifest: &VmImageManifest) -> io::Result<()> {
+    let theme = Theme::stdout();
+    println!(
+        "{} {} {}",
+        theme.title("Image"),
+        theme.badge("built", BadgeStyle::Success),
+        theme.code(&manifest.name)
+    );
+    print_image_manifest_table(&theme, manifest);
+    io::stdout().flush()
+}
+
+pub fn print_image_inspect(manifest: &VmImageManifest) -> io::Result<()> {
+    let theme = Theme::stdout();
+    println!("{} {}", theme.title("Image"), theme.code(&manifest.name));
+    print_image_manifest_table(&theme, manifest);
+    io::stdout().flush()
+}
+
+pub fn print_image_list(images: &[VmImageManifest]) -> io::Result<()> {
+    let theme = Theme::stdout();
+    println!(
+        "{} {}",
+        theme.title("Image inventory"),
+        theme.badge(&format!("{} total", images.len()), BadgeStyle::Info)
+    );
+    println!();
+    if images.is_empty() {
+        println!(
+            "{}",
+            theme.dim("No images found. Build one with `sagens image build <name>`.")
+        );
+        return io::stdout().flush();
+    }
+    let rows = images
+        .iter()
+        .map(|image| {
+            vec![
+                Cell::rendered(image.name.clone(), theme.code(&image.name), Align::Left),
+                Cell::plain(image.arch.clone()),
+                Cell::plain(image.apk.join(", ")),
+                Cell::plain(image.pip.join(", ")),
+                Cell::plain(image.npm.join(", ")),
+            ]
+        })
+        .collect::<Vec<_>>();
+    println!(
+        "{}",
+        theme.table(
+            vec![
+                Cell::plain("IMAGE"),
+                Cell::plain("ARCH"),
+                Cell::plain("APK"),
+                Cell::plain("PIP"),
+                Cell::plain("NPM"),
+            ],
+            rows,
+        )
+    );
+    io::stdout().flush()
+}
+
+pub fn print_image_removed(name: &str) -> io::Result<()> {
+    let theme = Theme::stdout();
+    println!(
+        "{} {} {}",
+        theme.title("Image"),
+        theme.badge("removed", BadgeStyle::Danger),
+        theme.code(name)
+    );
+    io::stdout().flush()
+}
+
+fn print_image_manifest_table(theme: &Theme, manifest: &VmImageManifest) {
+    println!();
+    println!(
+        "{}",
+        theme.table(
+            vec![Cell::plain("Field"), Cell::plain("Value")],
+            vec![
+                vec![Cell::plain("Name"), Cell::plain(manifest.name.clone())],
+                vec![Cell::plain("Arch"), Cell::plain(manifest.arch.clone())],
+                vec![
+                    Cell::plain("Alpine"),
+                    Cell::plain(manifest.alpine_version.clone()),
+                ],
+                vec![Cell::plain("APK"), Cell::plain(manifest.apk.join(", "))],
+                vec![Cell::plain("PIP"), Cell::plain(manifest.pip.join(", "))],
+                vec![Cell::plain("NPM"), Cell::plain(manifest.npm.join(", "))],
+                vec![
+                    Cell::plain("Packages"),
+                    Cell::plain(manifest.package_count.to_string()),
+                ],
+                vec![
+                    Cell::plain("Rootfs"),
+                    Cell::plain(manifest.rootfs_image.clone()),
+                ],
+                vec![
+                    Cell::plain("Cache"),
+                    Cell::plain(manifest.cache_image.as_deref().unwrap_or("none")),
+                ],
+            ],
+        )
+    );
 }

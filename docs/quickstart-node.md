@@ -49,6 +49,28 @@ JS
 
 `createBox()` created a durable workspace for one user. `box.start()` launched the disposable microVM runtime. `issueBoxCredentials()` produced a BOX-scoped credential, so the agent client can operate inside that BOX without daemon-wide access.
 
+## Named Images
+
+Use named images when every BOX should start with the same package set. The SDK builds the image through the daemon protocol; it does not shell out to the CLI.
+
+```ts
+import { Daemon } from "@xenage/sanges";
+
+const daemon = await Daemon.start();
+const image = await daemon.buildImage({
+  name: "chromium",
+  apk: ["chromium"],
+  minImageMib: 1024,
+});
+
+const first = await daemon.createBox({ image: image.name });
+const second = await daemon.createBox({ image: image.name });
+console.log(first.record.image, second.record.image);
+await daemon.close();
+```
+
+For a full Chromium smoke, see [`node/examples/named-images.ts`](../node/examples/named-images.ts).
+
 ## What to read next
 
 - Understand the nouns: [Mental model](mental-model.md)

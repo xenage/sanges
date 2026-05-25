@@ -28,47 +28,22 @@ else
   COLOR_FAIL=""
 fi
 
-FETCHER=""
-HASHER=""
-PLATFORM=""
-VERSION=""
-ASSET_NAME=""
-ASSET_URL=""
-CHECKSUM_URL=""
-WORK_DIR=""
-INSTALL_PATH=""
-PATH_UPDATED=0
+FETCHER="" HASHER="" PLATFORM="" VERSION="" ASSET_NAME="" ASSET_URL=""
+CHECKSUM_URL="" WORK_DIR="" INSTALL_PATH="" PATH_UPDATED=0
 
 line() {
-  local stream="$1"
-  local color="$2"
-  local message="$3"
-
+  local stream="$1" color="$2" message="$3"
   if [[ "$stream" == "stderr" ]]; then
     printf '%b%s%b\n' "$color" "$message" "$COLOR_RESET" >&2
     return
   fi
-
   printf '%b%s%b\n' "$color" "$message" "$COLOR_RESET"
 }
 
-step() {
-  line stdout "$COLOR_STEP" ""
-  line stdout "$COLOR_STEP" "$1"
-}
-
-note() {
-  line stdout "$COLOR_META" "      $1"
-}
-
-ok() {
-  line stdout "$COLOR_OK" "      $1"
-}
-
-die() {
-  line stderr "$COLOR_FAIL" "error: $1"
-  exit 1
-}
+step() { line stdout "$COLOR_STEP" ""; line stdout "$COLOR_STEP" "$1"; }
+note() { line stdout "$COLOR_META" "      $1"; }
+ok() { line stdout "$COLOR_OK" "      $1"; }
+die() { line stderr "$COLOR_FAIL" "error: $1"; exit 1; }
 
 usage() {
   cat <<'EOF'
@@ -95,122 +70,75 @@ EOF
 
 print_banner() {
   line stdout "$COLOR_BANNER" "============================================================"
-  line stdout "$COLOR_BANNER" "  ____"
-  line stdout "$COLOR_BANNER" " / ___|  __ _  __ _  ___ _ __  ___"
-  line stdout "$COLOR_BANNER" " \\___ \\ / _\` |/ _\` |/ _ \\ '_ \\/ __|"
-  line stdout "$COLOR_BANNER" "  ___) | (_| | (_| |  __/ | | \\__ \\"
-  line stdout "$COLOR_BANNER" " |____/ \\__,_|\\__, |\\___|_| |_|___/"
-  line stdout "$COLOR_BANNER" "              |___/"
+  line stdout "$COLOR_BANNER" "  ${APP_LABEL}"
   line stdout "$COLOR_BANNER" "============================================================"
   line stdout "$COLOR_META" "Install the latest ${APP_LABEL} release for this machine."
 }
 
-have_cmd() {
-  command -v "$1" >/dev/null 2>&1
-}
+have_cmd() { command -v "$1" >/dev/null 2>&1; }
 
 host_platform() {
   case "$(uname -s):$(uname -m)" in
-    Darwin:arm64)
-      printf 'macos-aarch64\n'
-      ;;
-    Darwin:x86_64)
-      printf 'macos-x86_64\n'
-      ;;
-    Linux:aarch64 | Linux:arm64)
-      printf 'linux-aarch64\n'
-      ;;
-    Linux:x86_64 | Linux:amd64)
-      printf 'linux-x86_64\n'
-      ;;
-    *)
-      return 1
-      ;;
+    Darwin:arm64) printf 'macos-aarch64\n' ;;
+    Darwin:x86_64) printf 'macos-x86_64\n' ;;
+    Linux:aarch64 | Linux:arm64) printf 'linux-aarch64\n' ;;
+    Linux:x86_64 | Linux:amd64) printf 'linux-x86_64\n' ;;
+    *) return 1 ;;
   esac
 }
 
 download_text() {
   local url="$1"
-
   if [[ "$FETCHER" == "curl" ]]; then
     curl -fsSL --retry 3 --connect-timeout 20 --proto "=https" --tlsv1.2 \
       -H "Accept: application/vnd.github+json" \
       -A "sanges-install.sh" \
       "$url"
-    return
+  else
+    wget -qO- --https-only --tries=3 --timeout=20 \
+      --header="Accept: application/vnd.github+json" \
+      --user-agent="sanges-install.sh" \
+      "$url"
   fi
-
-  wget -qO- --https-only --tries=3 --timeout=20 \
-    --header="Accept: application/vnd.github+json" \
-    --user-agent="sanges-install.sh" \
-    "$url"
 }
 
 download_file() {
   local url="$1"
   local dest="$2"
-
   if [[ "$FETCHER" == "curl" ]]; then
-    if [[ -t 1 ]]; then
-      curl -fL --retry 3 --connect-timeout 20 --proto "=https" --tlsv1.2 \
-        -A "sanges-install.sh" \
-        -# \
-        -o "$dest" \
-        "$url"
-    else
-      curl -fL --retry 3 --connect-timeout 20 --proto "=https" --tlsv1.2 \
-        -A "sanges-install.sh" \
-        -o "$dest" \
-        "$url"
-    fi
+    local progress=()
+    [[ -t 1 ]] && progress=(-#)
+    curl -fL --retry 3 --connect-timeout 20 --proto "=https" --tlsv1.2 \
+      -A "sanges-install.sh" "${progress[@]}" -o "$dest" "$url"
     return
   fi
-
-  if [[ -t 1 ]]; then
-    wget --https-only --tries=3 --timeout=20 \
-      --user-agent="sanges-install.sh" \
-      --progress=bar:force:noscroll \
-      -O "$dest" \
-      "$url"
-  else
-    wget --https-only --tries=3 --timeout=20 \
-      --user-agent="sanges-install.sh" \
-      -O "$dest" \
-      "$url"
-  fi
+  local progress=()
+  [[ -t 1 ]] && progress=(--progress=bar:force:noscroll)
+  wget --https-only --tries=3 --timeout=20 \
+    --user-agent="sanges-install.sh" "${progress[@]}" -O "$dest" "$url"
 }
 
 dir_on_path() {
-  local needle="$1"
-  local old_ifs="$IFS"
-  local entry
-
+  local old_ifs="$IFS" entry
   IFS=':'
   for entry in $PATH; do
-    if [[ "$entry" == "$needle" ]]; then
-      IFS="$old_ifs"
-      return 0
-    fi
+    [[ "$entry" == "$1" ]] && { IFS="$old_ifs"; return 0; }
   done
   IFS="$old_ifs"
-
   return 1
 }
 
 dir_writable_or_creatable() {
   local dir="$1"
   local parent
-
   if [[ -d "$dir" ]]; then
     [[ -w "$dir" ]]
     return
   fi
-
   parent="$(dirname "$dir")"
   while [[ "$parent" != "/" && ! -d "$parent" ]]; do
     parent="$(dirname "$parent")"
   done
-
   [[ -d "$parent" && -w "$parent" ]]
 }
 
@@ -228,11 +156,7 @@ path_line() {
 append_if_missing() {
   local file="$1"
   local wanted="$2"
-
-  if [[ -f "$file" ]] && grep -Fqx "$wanted" "$file"; then
-    return
-  fi
-
+  [[ -f "$file" ]] && grep -Fqx "$wanted" "$file" && return
   mkdir -p "$(dirname "$file")"
   if [[ -f "$file" && -s "$file" ]]; then
     printf '\n%s\n' "$wanted" >> "$file"
@@ -243,11 +167,7 @@ append_if_missing() {
 
 maybe_update_bash_path() {
   local export_line="$1"
-
-  if [[ "$MODIFY_BASH_PATH" != "1" ]]; then
-    return
-  fi
-
+  [[ "$MODIFY_BASH_PATH" == "1" ]] || return
   append_if_missing "$HOME/.bashrc" "$export_line"
   append_if_missing "$HOME/.bash_profile" "$export_line"
   PATH_UPDATED=1
@@ -267,12 +187,8 @@ confirm_replace() {
   printf 'Replace existing %s at %s? [y/N] ' "$APP_NAME" "$target" >&2
   read -r reply
   case "$reply" in
-    y | Y | yes | YES)
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
+    y | Y | yes | YES) return 0 ;;
+    *) return 1 ;;
   esac
 }
 
@@ -368,15 +284,9 @@ step "[4/8] Selecting install directory"
 if [[ -z "$INSTALL_DIR" ]]; then
   candidates=()
   case "$PLATFORM" in
-    macos-aarch64)
-      candidates=(/opt/homebrew/bin /usr/local/bin "$HOME/.local/bin" "$HOME/bin")
-      ;;
-    macos-x86_64)
-      candidates=(/usr/local/bin /opt/homebrew/bin "$HOME/.local/bin" "$HOME/bin")
-      ;;
-    linux-*)
-      candidates=(/usr/local/bin "$HOME/.local/bin" "$HOME/bin")
-      ;;
+    macos-aarch64) candidates=(/opt/homebrew/bin /usr/local/bin "$HOME/.local/bin" "$HOME/bin") ;;
+    macos-x86_64) candidates=(/usr/local/bin /opt/homebrew/bin "$HOME/.local/bin" "$HOME/bin") ;;
+    linux-*) candidates=(/usr/local/bin "$HOME/.local/bin" "$HOME/bin") ;;
   esac
 
   for candidate in "${candidates[@]}"; do
@@ -399,11 +309,7 @@ fi
 [[ -n "$INSTALL_DIR" ]] || die "could not find a writable install directory; use --dir"
 INSTALL_PATH="${INSTALL_DIR}/${APP_NAME}"
 note "install dir: $INSTALL_DIR"
-if dir_on_path "$INSTALL_DIR"; then
-  note "PATH: already available"
-else
-  note "PATH: will add for future bash sessions"
-fi
+dir_on_path "$INSTALL_DIR" && note "PATH: already available" || note "PATH: will add for future bash sessions"
 ok "install location ready"
 
 step "[5/8] Downloading release asset"

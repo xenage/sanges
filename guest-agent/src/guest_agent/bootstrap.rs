@@ -21,6 +21,14 @@ pub(crate) fn mount_runtime_filesystems() -> Result<()> {
         0,
         Some("mode=0620,ptmxmode=0666"),
     )?;
+    ensure_dir("/dev/shm")?;
+    mount_fs(
+        "tmpfs",
+        "/dev/shm",
+        "tmpfs",
+        libc::MS_NOSUID | libc::MS_NODEV,
+        Some("size=64m,mode=1777"),
+    )?;
     Ok(())
 }
 
@@ -35,6 +43,19 @@ pub(crate) fn bootstrap_guest(config: BootConfig) -> Result<()> {
     )?;
     let workspace_device = read_workspace_device("/proc/cmdline")?;
     mount_fs(&workspace_device, "/workspace", "ext4", 0, None)?;
+    if let Some(cache_device) = read_cache_device("/proc/cmdline")? {
+        ensure_dir("/opt")?;
+        ensure_dir("/opt/sagens-cache")?;
+        mount_fs(
+            &cache_device,
+            "/opt/sagens-cache",
+            "ext4",
+            libc::MS_RDONLY,
+            None,
+        )?;
+        append_boot_log("cache mounted\n");
+        eprintln!("guest bootstrap: cache mounted from {cache_device}");
+    }
     append_boot_log("workspace mounted\n");
     eprintln!("guest bootstrap: workspace mounted from {workspace_device}");
     chown_path("/workspace", config.uid, config.gid)?;
@@ -50,16 +71,24 @@ pub(crate) fn append_boot_log(line: &str) {
 }
 
 fn read_workspace_device(path: &str) -> Result<String> {
+    Ok(read_cmdline_value(path, "sandbox.workspace_device=")?
+        .unwrap_or_else(|| "/dev/vdb".to_string()))
+}
+
+fn read_cache_device(path: &str) -> Result<Option<String>> {
+    read_cmdline_value(path, "sandbox.cache_device=")
+}
+
+fn read_cmdline_value(path: &str, prefix: &str) -> Result<Option<String>> {
     let cmdline = std::fs::read_to_string(path)
         .map_err(|error| SandboxError::io("reading /proc/cmdline", error))?;
-    Ok(cmdline
+    Ok(cmdline_value(&cmdline, prefix))
+}
+
+fn cmdline_value(cmdline: &str, prefix: &str) -> Option<String> {
+    cmdline
         .split_whitespace()
-        .find_map(|token: &str| {
-            token
-                .strip_prefix("sandbox.workspace_device=")
-                .map(str::to_string)
-        })
-        .unwrap_or_else(|| "/dev/vdb".to_string()))
+        .find_map(|token: &str| token.strip_prefix(prefix).map(str::to_string))
 }
 
 fn chown_path(path: &str, uid: u32, gid: u32) -> Result<()> {
@@ -129,4 +158,19 @@ fn ensure_dir(path: &str) -> Result<()> {
 fn make_cstring(value: &str, field: &str) -> Result<std::ffi::CString> {
     std::ffi::CString::new(value)
         .map_err(|_| SandboxError::invalid(format!("{field} contains a null byte")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cmdline_value;
+
+    #[test]
+    fn parses_cache_device_from_cmdline() {
+        let cmdline =
+            "console=hvc0 sandbox.workspace_device=/dev/vdb sandbox.cache_device=/dev/vdc";
+        assert_eq!(
+            cmdline_value(cmdline, "sandbox.cache_device=").as_deref(),
+            Some("/dev/vdc")
+        );
+    }
 }

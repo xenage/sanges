@@ -2,10 +2,12 @@ use crate::auth::read_user_config;
 use crate::backend::libkrun::runner;
 use crate::sagens::args::{
     AdminCommand, BoxCommand, BoxSetCommand, CheckpointCommand, Command, DaemonCommand, ExecTarget,
-    FsCommand,
+    FsCommand, ImageCommand,
 };
 use crate::sagens::client::{SagensClient, download_path, upload_path};
-use crate::sagens::config::{build_runtime_config_for_endpoint, resolve_paths};
+use crate::sagens::config::{
+    build_runtime_config_for_endpoint, resolve_guest_config_for_images, resolve_paths,
+};
 use crate::sagens::{args, daemon, output, update};
 use crate::{Result, SandboxError};
 
@@ -13,6 +15,10 @@ pub async fn run() -> Result<i32> {
     let raw_args = std::env::args().skip(1).collect::<Vec<_>>();
     if let Some(config_path) = parse_internal_libkrun_runner(&raw_args)? {
         runner::run_from_file(&config_path)?;
+        return Ok(0);
+    }
+    if let Some(config_path) = parse_internal_security_harness(&raw_args)? {
+        runner::run_security_harness_from_file(&config_path)?;
         return Ok(0);
     }
     let command = args::parse(raw_args)?;
@@ -29,10 +35,13 @@ pub async fn run() -> Result<i32> {
             let runtime_config =
                 build_runtime_config_for_endpoint(&paths.state_dir, &paths.endpoint)?;
             let (config, already_running) = daemon::ensure_started(&paths, &host_binary).await?;
+            let runtime_info = daemon::read_runtime_info(&paths.state_dir).await?;
             output::print_start_message(
                 &config.endpoint,
                 already_running,
-                runtime_config.isolation_mode,
+                runtime_info
+                    .map(|info| info.isolation_mode)
+                    .unwrap_or(runtime_config.isolation_mode),
             )
             .map_err(|error| SandboxError::io("writing start output", error))?;
             Ok(0)
@@ -62,7 +71,8 @@ pub async fn run() -> Result<i32> {
             }
         },
         Command::Admin(command) => run_admin_command(&paths.user_config_path, command).await,
-        Command::Box(command) => run_box_command(&paths.user_config_path, command).await,
+        Command::Image(command) => run_image_command(&paths, command).await,
+        Command::Box(command) => run_box_command(&paths, command).await,
     }
 }
 
@@ -73,6 +83,18 @@ fn parse_internal_libkrun_runner(args: &[String]) -> Result<Option<std::path::Pa
     if args.len() != 2 {
         return Err(SandboxError::invalid(
             "usage: sagens __libkrun-runner <RUNNER_CONFIG_PATH>",
+        ));
+    }
+    Ok(Some(std::path::PathBuf::from(&args[1])))
+}
+
+fn parse_internal_security_harness(args: &[String]) -> Result<Option<std::path::PathBuf>> {
+    if args.is_empty() || args[0] != "__security-harness" {
+        return Ok(None);
+    }
+    if args.len() != 2 {
+        return Err(SandboxError::invalid(
+            "usage: sagens __security-harness <RUNNER_CONFIG_PATH>",
         ));
     }
     Ok(Some(std::path::PathBuf::from(&args[1])))
@@ -102,8 +124,11 @@ async fn run_admin_command(
     Ok(0)
 }
 
-async fn run_box_command(user_config_path: &std::path::Path, command: BoxCommand) -> Result<i32> {
-    let config = read_user_config(user_config_path)
+async fn run_box_command(
+    paths: &crate::sagens::config::SagensPaths,
+    command: BoxCommand,
+) -> Result<i32> {
+    let config = read_user_config(&paths.user_config_path)
         .await
         .map_err(|error| SandboxError::backend(format!("{error}; run `sagens start` first")))?;
     let client = SagensClient::connect(&config)
@@ -111,13 +136,20 @@ async fn run_box_command(user_config_path: &std::path::Path, command: BoxCommand
         .map_err(|error| SandboxError::backend(format!("{error}; run `sagens start` first")))?;
     match command {
         BoxCommand::List => {
-            output::print_box_table(&client.list_boxes().await?)
-                .map_err(|error| SandboxError::io("writing box list output", error))?;
+            let runtime_info = daemon::read_runtime_info(&paths.state_dir).await?;
+            output::print_box_table(
+                &client.list_boxes().await?,
+                runtime_info.map(|info| info.isolation_mode),
+            )
+            .map_err(|error| SandboxError::io("writing box list output", error))?;
             Ok(0)
         }
-        BoxCommand::New => {
-            output::print_box_action("created", &client.create_box().await?)
-                .map_err(|error| SandboxError::io("writing box create output", error))?;
+        BoxCommand::New(command) => {
+            output::print_box_action(
+                "created",
+                &client.create_box_from_image(command.image).await?,
+            )
+            .map_err(|error| SandboxError::io("writing box create output", error))?;
             Ok(0)
         }
         BoxCommand::Start(box_id) => {
@@ -150,6 +182,49 @@ async fn run_box_command(user_config_path: &std::path::Path, command: BoxCommand
         BoxCommand::Fs(command) => run_fs_command(&client, command).await,
         BoxCommand::Checkpoint(command) => run_checkpoint_command(&client, command).await,
     }
+}
+
+async fn run_image_command(
+    paths: &crate::sagens::config::SagensPaths,
+    command: ImageCommand,
+) -> Result<i32> {
+    let store = crate::images::ImageStore::new(&paths.state_dir);
+    match command {
+        ImageCommand::Build(command) => {
+            let base_guest = resolve_guest_config_for_images(&paths.state_dir).await?;
+            let spec = crate::images::ImageBuildSpec {
+                state_dir: paths.state_dir.clone(),
+                name: command.name,
+                apk: command.apk,
+                pip: command.pip,
+                npm: command.npm,
+                min_image_mib: command.min_image_mib,
+                force_refresh: command.force_refresh,
+                base_guest,
+            };
+            let manifest = tokio::task::spawn_blocking(move || store.build(spec))
+                .await
+                .map_err(|error| {
+                    SandboxError::backend(format!("joining image build: {error}"))
+                })??;
+            output::print_image_built(&manifest)
+                .map_err(|error| SandboxError::io("writing image build output", error))?;
+        }
+        ImageCommand::List => {
+            output::print_image_list(&store.list()?)
+                .map_err(|error| SandboxError::io("writing image list output", error))?;
+        }
+        ImageCommand::Inspect { name } => {
+            output::print_image_inspect(&store.inspect(&name)?)
+                .map_err(|error| SandboxError::io("writing image inspect output", error))?;
+        }
+        ImageCommand::Remove { name } => {
+            store.remove(&name)?;
+            output::print_image_removed(&name)
+                .map_err(|error| SandboxError::io("writing image remove output", error))?;
+        }
+    }
+    Ok(0)
 }
 
 async fn run_fs_command(client: &SagensClient, command: FsCommand) -> Result<i32> {

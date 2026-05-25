@@ -50,14 +50,14 @@ pub fn spawn_daemon_process(
         .unwrap_or_else(|| state_dir.join("config.json"));
     let user_config = UserConfig::new(endpoint.unwrap_or_else(default_endpoint));
     block_on(write_user_config(&user_config_path, &user_config))?.map_err(runtime_error)?;
-    let child = spawn_process(
+    let mut child = spawn_process(
         Path::new(&host_binary),
         &state_dir,
         &user_config_path,
         &user_config,
     )
     .map_err(runtime_error)?;
-    wait_for_daemon(&user_config)?;
+    wait_for_daemon(&user_config, &mut child, &state_dir)?;
     let user_config_json = serde_json::to_string(&user_config).map_err(runtime_error)?;
     Ok(DaemonProcessHandle {
         user_config_json,
@@ -144,20 +144,33 @@ fn spawn_process(
         .map_err(|error| sagens_host::SandboxError::io("spawning python daemon child", error))
 }
 
-fn wait_for_daemon(user_config: &UserConfig) -> PyResult<()> {
+fn wait_for_daemon(user_config: &UserConfig, child: &mut Child, state_dir: &Path) -> PyResult<()> {
     let deadline = Instant::now() + DAEMON_WAIT_TIMEOUT;
     loop {
         if block_on(async { daemon_is_healthy(user_config).await })?.map_err(runtime_error)? {
             return Ok(());
         }
+        if let Some(status) = child.try_wait().map_err(runtime_error)? {
+            return Err(runtime_error(format!(
+                "daemon exited early ({status}) while waiting for {}: {}",
+                user_config.endpoint,
+                daemon_log(state_dir)
+            )));
+        }
         if Instant::now() >= deadline {
             return Err(runtime_error(format!(
-                "timed out waiting for daemon at {}",
-                user_config.endpoint
+                "timed out waiting for daemon at {}: {}",
+                user_config.endpoint,
+                daemon_log(state_dir)
             )));
         }
         std::thread::sleep(Duration::from_millis(100));
     }
+}
+
+fn daemon_log(state_dir: &Path) -> String {
+    std::fs::read_to_string(state_dir.join("daemon.log"))
+        .unwrap_or_else(|error| format!("daemon log unavailable: {error}"))
 }
 
 async fn daemon_is_healthy(user_config: &UserConfig) -> sagens_host::Result<bool> {

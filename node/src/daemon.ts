@@ -11,7 +11,7 @@ import { Box } from "./box.js";
 import { BoxApiClient } from "./client.js";
 import { userConfigFromWire } from "./decode.js";
 import { SagensError } from "./errors.js";
-import { BoxCredentialBundle, BoxRecord, UserConfig } from "./models.js";
+import { BoxCredentialBundle, BoxRecord, ImageBuildOptions, UserConfig, VmImageManifest } from "./models.js";
 import { resolveHostBinary } from "./binary.js";
 
 export interface DaemonStartOptions {
@@ -88,15 +88,31 @@ export class Daemon {
     return new Box(this.client, await this.client.getBox(boxId));
   }
 
-  async createBox(): Promise<Box> {
-    return new Box(this.client, await this.client.createBox());
+  async createBox(options: { image?: string | null } = {}): Promise<Box> {
+    return new Box(this.client, await this.client.createBox(options));
+  }
+
+  buildImage(options: ImageBuildOptions): Promise<VmImageManifest> {
+    return this.client.buildImage(options);
+  }
+
+  listImages(): Promise<VmImageManifest[]> {
+    return this.client.listImages();
+  }
+
+  inspectImage(name: string): Promise<VmImageManifest> {
+    return this.client.inspectImage(name);
+  }
+
+  removeImage(name: string): Promise<void> {
+    return this.client.removeImage(name);
   }
 
   issueBoxCredentials(boxId: string): Promise<BoxCredentialBundle> {
     return this.client.issueBoxCredentials(boxId);
   }
 
-  connectAsBox(boxId: string, boxToken?: string | null): Promise<BoxApiClient> {
+  connectAsBox(boxId: string, boxToken: string): Promise<BoxApiClient> {
     return BoxApiClient.connectAsBox(this.client.endpoint, boxId, boxToken);
   }
 

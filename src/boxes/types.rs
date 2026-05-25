@@ -23,6 +23,30 @@ pub struct BoxSettings {
     pub network_enabled: BoxBooleanSetting,
 }
 
+impl Default for BoxSettings {
+    fn default() -> Self {
+        Self {
+            cpu_cores: BoxNumericSetting { current: 1, max: 1 },
+            memory_mb: BoxNumericSetting {
+                current: 128,
+                max: 128,
+            },
+            fs_size_mib: BoxNumericSetting {
+                current: 128,
+                max: 128,
+            },
+            max_processes: BoxNumericSetting {
+                current: 256,
+                max: 256,
+            },
+            network_enabled: BoxBooleanSetting {
+                current: false,
+                max: false,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BoxRuntimeUsage {
     pub cpu_millicores: u32,
@@ -56,9 +80,11 @@ pub struct BoxRecord {
     pub box_id: Uuid,
     #[serde(default)]
     pub name: Option<String>,
+    #[serde(default = "default_box_image")]
+    pub image: String,
     pub status: BoxStatus,
     #[serde(default)]
-    pub settings: Option<BoxSettings>,
+    pub settings: BoxSettings,
     #[serde(default)]
     pub runtime_usage: Option<BoxRuntimeUsage>,
     pub workspace_path: PathBuf,
@@ -67,6 +93,10 @@ pub struct BoxRecord {
     pub last_start_at_ms: Option<u64>,
     pub last_stop_at_ms: Option<u64>,
     pub last_error: Option<String>,
+}
+
+fn default_box_image() -> String {
+    crate::images::BASE_IMAGE_NAME.into()
 }
 
 impl From<crate::guest_rpc::GuestRuntimeStats> for BoxRuntimeUsage {

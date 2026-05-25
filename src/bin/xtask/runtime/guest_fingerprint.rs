@@ -5,15 +5,20 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use sha2::{Digest, Sha256};
 
-use super::super::types::Platform;
+use super::super::types::{Platform, PlatformArch, PlatformOs};
 
 const GUEST_ARTIFACT_FINGERPRINT_FILE: &str = ".build-fingerprint";
+const ARM64_IMAGE_MAGIC_OFFSET: usize = 0x38;
+const ARM64_IMAGE_MAGIC_END: usize = ARM64_IMAGE_MAGIC_OFFSET + 4;
 
 pub(crate) fn guest_artifacts_stale(root: &Path, platform: Platform) -> anyhow::Result<bool> {
     let kernel = super::guest_kernel_path(root, platform);
     let rootfs = super::guest_rootfs_path(root, platform);
     let fingerprint_path = guest_artifact_fingerprint_path(root, platform);
     if !kernel.is_file() || !rootfs.is_file() || !fingerprint_path.is_file() {
+        return Ok(true);
+    }
+    if !guest_kernel_compatible(platform, &kernel)? {
         return Ok(true);
     }
     let current = current_guest_artifact_fingerprint(root, platform)?;
@@ -37,6 +42,14 @@ pub(crate) fn write_guest_artifact_fingerprint(
 
 fn guest_artifact_fingerprint_path(root: &Path, platform: Platform) -> PathBuf {
     super::guest_output_dir(root, platform).join(GUEST_ARTIFACT_FINGERPRINT_FILE)
+}
+
+fn guest_kernel_compatible(platform: Platform, kernel: &Path) -> anyhow::Result<bool> {
+    if platform.os != PlatformOs::Macos || platform.arch != PlatformArch::Aarch64 {
+        return Ok(true);
+    }
+    let bytes = fs::read(kernel).with_context(|| format!("reading {}", kernel.display()))?;
+    Ok(bytes.get(ARM64_IMAGE_MAGIC_OFFSET..ARM64_IMAGE_MAGIC_END) == Some(b"ARMd".as_slice()))
 }
 
 fn current_guest_artifact_fingerprint(root: &Path, platform: Platform) -> anyhow::Result<String> {
@@ -96,4 +109,52 @@ fn hash_path_recursively(root: &Path, path: &Path, hasher: &mut Sha256) -> anyho
         return Ok(());
     }
     anyhow::bail!("unsupported fingerprint path type: {}", path.display());
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::tempdir;
+
+    use super::*;
+
+    fn platform(os: PlatformOs, arch: PlatformArch) -> Platform {
+        Platform { os, arch }
+    }
+
+    #[test]
+    fn accepts_raw_macos_arm64_kernel() -> anyhow::Result<()> {
+        let temp = tempdir()?;
+        let kernel = temp.path().join("vmlinuz-virt");
+        let mut bytes = vec![0; ARM64_IMAGE_MAGIC_END];
+        bytes[ARM64_IMAGE_MAGIC_OFFSET..ARM64_IMAGE_MAGIC_END].copy_from_slice(b"ARMd");
+        fs::write(&kernel, bytes)?;
+
+        assert!(guest_kernel_compatible(
+            platform(PlatformOs::Macos, PlatformArch::Aarch64),
+            &kernel
+        )?);
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_non_raw_macos_arm64_kernel() -> anyhow::Result<()> {
+        let temp = tempdir()?;
+        let kernel = temp.path().join("vmlinuz-virt");
+        fs::write(&kernel, b"MZ")?;
+
+        assert!(!guest_kernel_compatible(
+            platform(PlatformOs::Macos, PlatformArch::Aarch64),
+            &kernel
+        )?);
+        Ok(())
+    }
+
+    #[test]
+    fn skips_kernel_probe_for_other_platforms() -> anyhow::Result<()> {
+        assert!(guest_kernel_compatible(
+            platform(PlatformOs::Linux, PlatformArch::X86_64),
+            Path::new("/missing/kernel")
+        )?);
+        Ok(())
+    }
 }

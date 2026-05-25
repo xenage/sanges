@@ -4,7 +4,7 @@ use crate::Result;
 use crate::boxes::BoxManager;
 
 use super::WsWriter;
-use super::dispatch::{authorize_box, send_response};
+use super::dispatch::{authorize_box, require_admin, send_response};
 use crate::box_api::protocol::{BoxResponse, Principal};
 use crate::workspace::CheckpointRestoreMode;
 
@@ -64,7 +64,7 @@ pub(super) async fn fork_checkpoint(
     checkpoint_id: String,
     new_box_name: Option<String>,
 ) -> Result<()> {
-    authorize_box(principal, box_id)?;
+    require_admin(principal)?;
     let record = service
         .checkpoint_fork(box_id, &checkpoint_id, new_box_name)
         .await?;

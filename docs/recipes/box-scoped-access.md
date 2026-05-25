@@ -39,7 +39,8 @@ PY
 
 - `issue_box_credentials(...)` created a BOX-scoped bundle with `box_id`, `box_token`, and `endpoint`.
 - `connect_as_box(...)` authenticated as that BOX instead of as a daemon admin.
-- The BOX-scoped client could act on that BOX, but daemon-wide operations such as `list_boxes()` were rejected.
+- The BOX-scoped client could exec, open shells, read and write `/workspace`, and manage checkpoints for that BOX, but daemon-wide operations such as `list_boxes()` were rejected.
+- BOX lifecycle and control-plane mutations such as start, stop, remove, settings changes, and checkpoint fork remain admin-only.
 
 That is the right primitive when you want to delegate one sandbox to one worker without handing out full control-plane credentials.
 

@@ -4,7 +4,9 @@ use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
-use crate::workspace::{FileKind, FileNode, ReadFileResult, resolve_workspace_path};
+use crate::workspace::{
+    FileKind, FileNode, ReadFileResult, resolve_workspace_path, validate_read_limit,
+};
 use crate::{Result, SandboxError};
 
 const WORKSPACE_ROOT: &str = "/workspace";
@@ -46,8 +48,9 @@ pub async fn list_files(path: &str) -> Result<Vec<FileNode>> {
     .await
 }
 
-pub async fn read_file(path: &str, limit: usize) -> Result<ReadFileResult> {
+pub async fn read_file(path: &str, limit: u64) -> Result<ReadFileResult> {
     let path = path.to_string();
+    let limit = validate_read_limit(limit)?;
     run_blocking(move || {
         let root = Path::new(WORKSPACE_ROOT);
         let file_path = resolve_workspace_path(root, &path)?;

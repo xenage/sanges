@@ -17,6 +17,7 @@ pub trait BoxManager: Send + Sync {
     async fn get_box(&self, box_id: Uuid) -> Result<BoxRecord>;
     async fn create_box(&self) -> Result<BoxRecord>;
     async fn create_named_box(&self, name: Option<String>) -> Result<BoxRecord>;
+    async fn create_box_from_image(&self, image: Option<String>) -> Result<BoxRecord>;
     async fn set_box_setting(&self, box_id: Uuid, setting: BoxSettingValue) -> Result<BoxRecord>;
     async fn start_box(&self, box_id: Uuid) -> Result<BoxRecord>;
     async fn stop_box(&self, box_id: Uuid) -> Result<BoxRecord>;

@@ -19,12 +19,7 @@ where
 }
 
 pub(super) fn box_policy(record: &BoxRecord, timeout_ms: Option<u64>) -> Result<SandboxPolicy> {
-    let settings = record.settings.as_ref().ok_or_else(|| {
-        SandboxError::backend(format!(
-            "BOX {} is missing persisted settings",
-            record.box_id
-        ))
-    })?;
+    let settings = &record.settings;
     Ok(SandboxPolicy {
         cpu_cores: settings.cpu_cores.current,
         memory_mb: settings.memory_mb.current,

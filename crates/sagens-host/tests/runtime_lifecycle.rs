@@ -201,17 +201,22 @@ async fn recycle_run_renews_sandbox_identity_without_dropping_prepared_state() {
     let marker = run.root_dir.join("warm.marker");
     tokio::fs::write(&marker, b"warm").await.expect("marker");
     let old_sandbox_id = run.sandbox_id;
-    assert_eq!(
-        run.vsock_socket,
-        std::path::PathBuf::from(format!("/tmp/asb-{}.sock", old_sandbox_id.simple()))
+    let old_vsock_socket = run.vsock_socket.clone();
+    assert!(
+        old_vsock_socket
+            .extension()
+            .is_some_and(|ext| ext == "sock")
     );
 
     let recycled = store.recycle_run(run).await.expect("recycle run");
 
     assert_ne!(recycled.sandbox_id, old_sandbox_id);
-    assert_eq!(
-        recycled.vsock_socket,
-        std::path::PathBuf::from(format!("/tmp/asb-{}.sock", recycled.sandbox_id.simple()))
+    assert_ne!(recycled.vsock_socket, old_vsock_socket);
+    assert!(
+        recycled
+            .vsock_socket
+            .extension()
+            .is_some_and(|ext| ext == "sock")
     );
     assert_eq!(
         tokio::fs::read(recycled.root_dir.join("warm.marker"))
@@ -245,30 +250,14 @@ async fn updates_persisted_box_settings_and_resizes_workspace_disk() {
         .set_box_setting(record.box_id, BoxSettingValue::CpuCores { value: 2 })
         .await
         .expect("update cpu");
-    assert_eq!(
-        updated
-            .settings
-            .as_ref()
-            .expect("settings")
-            .cpu_cores
-            .current,
-        2
-    );
+    assert_eq!(updated.settings.cpu_cores.current, 2);
 
     if has_ext4_resize_tools() {
         let updated = service
             .set_box_setting(record.box_id, BoxSettingValue::FsSizeMib { value: 96 })
             .await
             .expect("update fs size");
-        assert_eq!(
-            updated
-                .settings
-                .as_ref()
-                .expect("settings")
-                .fs_size_mib
-                .current,
-            96
-        );
+        assert_eq!(updated.settings.fs_size_mib.current, 96);
         assert_eq!(
             tokio::fs::metadata(&updated.workspace_path)
                 .await

@@ -177,11 +177,12 @@ impl GuestRpcClient {
     }
 
     pub async fn read_file(&self, path: &str, limit: usize) -> Result<ReadFileResult> {
+        let limit = crate::workspace::validate_read_limit(limit as u64)?;
         match self
             .request_response(GuestRequest::ReadFile {
                 request_id: self.next_request_id(),
                 path: path.into(),
-                limit,
+                limit: limit as u64,
             })
             .await?
         {

@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use crate::auth::{AdminCredentialBundle, BoxCredentialBundle};
 use crate::boxes::{BoxRecord, BoxSettingValue};
+use crate::images::VmImageManifest;
 use crate::protocol::OutputStream;
 use crate::workspace::CheckpointRestoreMode;
 use crate::workspace::{FileNode, ReadFileResult, WorkspaceCheckpointRecord};
@@ -24,7 +25,7 @@ pub enum ClientMessage {
     },
     AuthenticateBox {
         box_id: Uuid,
-        box_token: Option<String>,
+        box_token: String,
     },
     Request {
         request: BoxRequest,
@@ -53,6 +54,27 @@ pub enum BoxRequest {
     },
     NewBox {
         request_id: String,
+        image: Option<String>,
+    },
+    ImageBuild {
+        request_id: String,
+        name: String,
+        apk: Vec<String>,
+        pip: Vec<String>,
+        npm: Vec<String>,
+        min_image_mib: u64,
+        force_refresh: bool,
+    },
+    ImageList {
+        request_id: String,
+    },
+    ImageInspect {
+        request_id: String,
+        name: String,
+    },
+    ImageRemove {
+        request_id: String,
+        name: String,
     },
     StartBox {
         request_id: String,
@@ -114,7 +136,7 @@ pub enum BoxRequest {
         request_id: String,
         box_id: Uuid,
         path: String,
-        limit: usize,
+        limit: u64,
     },
     FsWrite {
         request_id: String,
@@ -183,7 +205,11 @@ impl BoxRequest {
             Self::Ping { request_id }
             | Self::ListBoxes { request_id }
             | Self::GetBox { request_id, .. }
-            | Self::NewBox { request_id }
+            | Self::NewBox { request_id, .. }
+            | Self::ImageBuild { request_id, .. }
+            | Self::ImageList { request_id }
+            | Self::ImageInspect { request_id, .. }
+            | Self::ImageRemove { request_id, .. }
             | Self::StartBox { request_id, .. }
             | Self::StopBox { request_id, .. }
             | Self::RemoveBox { request_id, .. }
@@ -224,6 +250,15 @@ pub enum BoxResponse {
     },
     BoxRemoved {
         box_id: Uuid,
+    },
+    Image {
+        image: VmImageManifest,
+    },
+    ImageList {
+        images: Vec<VmImageManifest>,
+    },
+    ImageRemoved {
+        name: String,
     },
     Files {
         path: String,

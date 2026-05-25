@@ -5,24 +5,25 @@ import queue
 import threading
 from collections import defaultdict
 from itertools import count
-from typing import Any
+from typing import cast
 
 from ._errors import SagensError
+from ._wire import QueueItem, WireObject
 from ._websocket import _WebSocketConnection
 
 
 class _Transport:
-    def __init__(self, endpoint: str, auth_message: dict[str, Any], principal: dict[str, str]) -> None:
+    def __init__(self, endpoint: str, auth_message: WireObject, principal: dict[str, str]) -> None:
         self.endpoint = endpoint
         self._conn = _WebSocketConnection(endpoint)
         self._send_lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._closed = False
         self._next_id = count(1)
-        self._pending_responses: dict[str, queue.Queue[Any]] = {}
-        self._exec_streams: dict[str, queue.Queue[Any]] = {}
-        self._shell_streams: dict[str, queue.Queue[Any]] = {}
-        self._buffered_shell_events: dict[str, list[Any]] = defaultdict(list)
+        self._pending_responses: dict[str, queue.Queue[QueueItem]] = {}
+        self._exec_streams: dict[str, queue.Queue[QueueItem]] = {}
+        self._shell_streams: dict[str, queue.Queue[QueueItem]] = {}
+        self._buffered_shell_events: dict[str, list[WireObject]] = defaultdict(list)
         self._authenticate(auth_message, principal)
         self._reader = threading.Thread(target=self._reader_loop, daemon=True)
         self._reader.start()
@@ -40,9 +41,9 @@ class _Transport:
     def next_request_id(self) -> str:
         return str(next(self._next_id))
 
-    def request_response(self, request: dict[str, Any], expected_type: str) -> dict[str, Any]:
-        request_id = request["request_id"]
-        response_queue: queue.Queue[Any] = queue.Queue(maxsize=1)
+    def request_response(self, request: WireObject, expected_type: str) -> WireObject:
+        request_id = str(request["request_id"])
+        response_queue: queue.Queue[QueueItem] = queue.Queue(maxsize=1)
         with self._state_lock:
             self._pending_responses[request_id] = response_queue
         try:
@@ -58,9 +59,9 @@ class _Transport:
             )
         return response
 
-    def open_exec_stream(self, request: dict[str, Any]) -> tuple[str, queue.Queue[Any]]:
-        request_id = request["request_id"]
-        event_queue: queue.Queue[Any] = queue.Queue()
+    def open_exec_stream(self, request: WireObject) -> tuple[str, queue.Queue[QueueItem]]:
+        request_id = str(request["request_id"])
+        event_queue: queue.Queue[QueueItem] = queue.Queue()
         with self._state_lock:
             self._exec_streams[request_id] = event_queue
         try:
@@ -71,8 +72,8 @@ class _Transport:
             raise
         return request_id, event_queue
 
-    def register_shell(self, shell_id: str) -> queue.Queue[Any]:
-        event_queue: queue.Queue[Any] = queue.Queue()
+    def register_shell(self, shell_id: str) -> queue.Queue[QueueItem]:
+        event_queue: queue.Queue[QueueItem] = queue.Queue()
         with self._state_lock:
             self._shell_streams[shell_id] = event_queue
             buffered = self._buffered_shell_events.pop(shell_id, [])
@@ -80,12 +81,12 @@ class _Transport:
             event_queue.put_nowait(event)
         return event_queue
 
-    def send_shell_request(self, request: dict[str, Any]) -> None:
+    def send_shell_request(self, request: WireObject) -> None:
         self._send_json({"type": "request", "request": request})
 
-    def _authenticate(self, auth_message: dict[str, Any], principal: dict[str, str]) -> None:
+    def _authenticate(self, auth_message: WireObject, principal: dict[str, str]) -> None:
         self._send_json(auth_message)
-        payload = json.loads(self._conn.recv_text())
+        payload = cast(WireObject, json.loads(self._conn.recv_text()))
         if payload.get("type") != "authenticated":
             raise SagensError(f"unexpected auth message: {payload}")
         if payload.get("principal") != principal:
@@ -93,31 +94,31 @@ class _Transport:
                 f"unexpected auth principal {payload.get('principal')}; expected {principal}"
             )
 
-    def _send_json(self, payload: dict[str, Any]) -> None:
+    def _send_json(self, payload: WireObject) -> None:
         with self._send_lock:
             self._conn.send_text(json.dumps(payload))
 
-    def _expect_queue_item(self, event_queue: queue.Queue[Any]) -> Any:
+    def _expect_queue_item(self, event_queue: queue.Queue[QueueItem]) -> WireObject:
         item = event_queue.get()
-        if isinstance(item, Exception):
+        if isinstance(item, BaseException):
             raise item
         return item
 
     def _reader_loop(self) -> None:
         try:
             while not self._closed:
-                payload = json.loads(self._conn.recv_text())
+                payload = cast(WireObject, json.loads(self._conn.recv_text()))
                 if payload.get("type") == "event":
-                    self._dispatch_event(payload["event"])
+                    self._dispatch_event(cast(WireObject, payload["event"]))
         except Exception as error:
             self._fail_all(str(error))
         else:
             self._fail_all("websocket connection closed")
 
-    def _dispatch_event(self, event: dict[str, Any]) -> None:
+    def _dispatch_event(self, event: WireObject) -> None:
         kind = event["type"]
         if kind == "response":
-            self._resolve_response(event["request_id"], event["response"])
+            self._resolve_response(str(event["request_id"]), cast(WireObject, event["response"]))
             return
         if kind in {"exec_output", "exec_exit"}:
             self._push_exec_event(event)
@@ -126,15 +127,16 @@ class _Transport:
             self._push_shell_event(event)
             return
         if kind == "error":
-            self._resolve_error(event.get("request_id"), event["message"])
+            request_id = event.get("request_id")
+            self._resolve_error(str(request_id) if request_id is not None else None, str(event["message"]))
 
-    def _resolve_response(self, request_id: str, response: dict[str, Any]) -> None:
+    def _resolve_response(self, request_id: str, response: WireObject) -> None:
         with self._state_lock:
             response_queue = self._pending_responses.pop(request_id, None)
         if response_queue is not None:
             response_queue.put_nowait(response)
 
-    def _push_exec_event(self, event: dict[str, Any]) -> None:
+    def _push_exec_event(self, event: WireObject) -> None:
         with self._state_lock:
             event_queue = self._exec_streams.get(event["request_id"])
             if event["type"] == "exec_exit":
@@ -142,8 +144,8 @@ class _Transport:
         if event_queue is not None:
             event_queue.put_nowait(event)
 
-    def _push_shell_event(self, event: dict[str, Any]) -> None:
-        shell_id = event["shell_id"]
+    def _push_shell_event(self, event: WireObject) -> None:
+        shell_id = str(event["shell_id"])
         with self._state_lock:
             event_queue = self._shell_streams.get(shell_id)
             if event_queue is None:
