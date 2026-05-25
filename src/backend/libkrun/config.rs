@@ -88,7 +88,7 @@ impl LibkrunRunnerConfig {
     pub fn uses_krun_init(&self) -> bool {
         cfg!(target_os = "linux")
             && self.firmware.is_none()
-            && self.kernel_format == GuestKernelFormat::Raw
+            && self.isolation_mode == IsolationMode::Compat
     }
 
     pub fn root_device(&self) -> &'static str {
@@ -214,27 +214,23 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn non_raw_linux_kernel_uses_direct_root_boot_cmdline() {
+    fn non_raw_linux_compat_kernel_uses_krun_init_cmdline() {
         let mut config = runner_config();
         config.kernel_format = GuestKernelFormat::ImageGz;
         let cmdline = config.kernel_cmdline();
-        assert!(!config.uses_krun_init());
-        assert!(cmdline.contains(&format!("root={}", config.root_device())));
-        assert!(!cmdline.contains("init=/init.krun"));
+        assert!(config.uses_krun_init());
+        assert!(cmdline.contains("root=/dev/root"));
+        assert!(cmdline.contains("init=/init.krun"));
     }
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn secure_mode_rejects_krun_init_boot_path() {
+    fn secure_mode_uses_direct_root_boot_cmdline() {
         let mut config = runner_config();
         config.isolation_mode = IsolationMode::Secure;
-        let error = config
-            .validate_secure_constraints()
-            .expect_err("secure krun-init boot must fail");
-        assert!(
-            error
-                .to_string()
-                .contains("direct block-root guest boot path")
-        );
+        let cmdline = config.kernel_cmdline();
+        assert!(!config.uses_krun_init());
+        assert!(cmdline.contains(&format!("root={}", config.root_device())));
+        assert!(!cmdline.contains("init=/init.krun"));
     }
 }
