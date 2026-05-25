@@ -531,8 +531,6 @@ jobs:
       - gate
       - test_smoke_node
     runs-on: xenage-kvm
-    env:
-      PACKAGE_VERSION: "0.0.0-0.3"
     steps:
       - uses: actions/checkout@v6
 
@@ -553,13 +551,14 @@ jobs:
 
       - name: Install packed Node package
         run: |
+          package_version="$(node -p "require('./node/package.json').version")"
           tmpdir="$(mktemp -d)"
           echo "NODE_E2E_TMP=$tmpdir" >> "$GITHUB_ENV"
           cd "$tmpdir"
           npm init -y
           npm install \
-            "$GITHUB_WORKSPACE/node-dist/xenage-sanges-${PACKAGE_VERSION}.tgz" \
-            "$GITHUB_WORKSPACE/node-dist/xenage-sanges-linux-x64-${PACKAGE_VERSION}.tgz"
+            "$GITHUB_WORKSPACE/node-dist/xenage-sanges-${package_version}.tgz" \
+            "$GITHUB_WORKSPACE/node-dist/xenage-sanges-linux-x64-${package_version}.tgz"
 
       - name: Run full Node e2e
         run: |
