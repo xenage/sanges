@@ -12,6 +12,9 @@ impl GuestRpcClient {
         loop {
             match lines.next_line().await {
                 Ok(Some(line)) => {
+                    if line.is_empty() {
+                        continue;
+                    }
                     if let Err(error) = self.handle_line(&line).await {
                         self.fail_all(error.to_string()).await;
                         break;
@@ -249,5 +252,27 @@ mod tests {
             }
         );
         assert!(client.inner.exec_streams.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn read_loop_ignores_empty_lines() {
+        let (host_stream, guest_stream) = tokio::net::UnixStream::pair().expect("unix stream pair");
+        let client = GuestRpcClient::from_stream(host_stream);
+        let (reader, mut writer) = tokio::io::split(guest_stream);
+        drop(reader);
+
+        tokio::io::AsyncWriteExt::write_all(
+            &mut writer,
+            br#"
+{"type":"ready","ready":{"protocol_version":3,"capabilities":[]}}
+"#,
+        )
+        .await
+        .expect("write ready");
+
+        client
+            .wait_ready(std::time::Duration::from_secs(1))
+            .await
+            .expect("ready after blank line");
     }
 }

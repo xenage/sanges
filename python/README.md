@@ -11,10 +11,11 @@ Python package for managing `sagens` daemons and BOX workspaces.
 
 ## Support
 
-- Host OS and CPU: macOS `arm64`, Linux `x86_64`, Linux `arm64` / `aarch64`
+- Secure host path: Linux `x86_64`, Linux `arm64` / `aarch64`
+- macOS `arm64`: dev/test only with `SAGENS_ISOLATION_MODE=compat` and `SAGENS_INSECURE_COMPAT=1`
 - Python versions: `3.11+` (`pyo3` `abi3-py311`; classifiers for `3.11`, `3.12`, and `3.13`)
-- Linux full microVM runtime requires `/dev/kvm`
-- The current libkrun-only backend does not support macOS `x86_64` or Windows hosts
+- Linux secure mode requires `/dev/kvm`, delegated cgroup access through `SAGENS_CGROUP_PARENT`, and Linux Landlock support
+- The current backend does not support Windows or secure macOS runtime release paths
 
 ## Quickstart
 
@@ -67,9 +68,14 @@ box.set("memory_mb", 512)       # Guest RAM in MiB.
 box.set("fs_size_mib", 1024)    # Persistent workspace disk in MiB.
 box.set("cpu_cores", 2)
 
-box.set("network_enabled", True)   # Enable network.
+box.set("network_enabled", True)   # Enable network in compat mode only.
 box.set("network_enabled", False)  # Disable network.
 ```
+
+## Named Images
+
+See [examples/named_images.py](examples/named_images.py) for building a local
+`chromium` image and creating two BOXes from it through the SDK.
 
 ## Local development
 

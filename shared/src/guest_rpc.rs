@@ -66,7 +66,7 @@ pub enum GuestRequest {
     ReadFile {
         request_id: String,
         path: String,
-        limit: usize,
+        limit: u64,
     },
     WriteFile {
         request_id: String,

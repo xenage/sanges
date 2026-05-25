@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 from pathlib import Path
-from typing import Any
+from typing import cast
 from uuid import UUID
 
 from ._decode import (
@@ -19,21 +19,24 @@ from ._decode import (
 )
 from ._download import resolve_download_file_path, should_fallback_to_file_download
 from ._errors import SagensError
+from ._image_client import ImageClientMixin
 from ._models import (
     AdminCredentialBundle,
     BoxCredentialBundle,
     BoxRecord,
     CheckpointRestoreMode,
     CompletedExecution,
+    FileNode,
     ReadFileResult,
     UserConfig,
     WorkspaceCheckpointRecord,
 )
 from ._shell import BoxShell
 from ._transport import _Transport
+from ._wire import WireObject
 
 
-class BoxApiClient:
+class BoxApiClient(ImageClientMixin):
     def __init__(self, transport: _Transport) -> None:
         self._transport = transport
 
@@ -57,7 +60,7 @@ class BoxApiClient:
         )
 
     @classmethod
-    def from_user_config(cls, config: UserConfig | dict[str, Any]) -> "BoxApiClient":
+    def from_user_config(cls, config: UserConfig | WireObject) -> "BoxApiClient":
         user_config = user_config_from_dict(config) if isinstance(config, dict) else config
         return cls.connect(user_config.endpoint, user_config.admin_uuid, user_config.admin_token)
 
@@ -66,7 +69,7 @@ class BoxApiClient:
         cls,
         endpoint: str,
         box_id: UUID | str,
-        box_token: str | None,
+        box_token: str,
     ) -> "BoxApiClient":
         box_id = UUID(str(box_id))
         return cls(
@@ -86,14 +89,15 @@ class BoxApiClient:
 
     def list_boxes(self) -> list[BoxRecord]:
         response = self._request({"type": "list_boxes"}, "box_list")
-        return [box_record_from_dict(item) for item in response["boxes"]]
+        boxes = cast(list[WireObject], response["boxes"])
+        return [box_record_from_dict(item) for item in boxes]
 
     def get_box(self, box_id: UUID | str) -> BoxRecord:
         response = self._request({"type": "get_box", "box_id": str(box_id)}, "box")
         return box_record_from_dict(response["record"])
 
-    def create_box(self) -> BoxRecord:
-        response = self._request({"type": "new_box"}, "box")
+    def create_box(self, image: str | None = None) -> BoxRecord:
+        response = self._request({"type": "new_box", "image": image}, "box")
         return box_record_from_dict(response["record"])
 
     def start_box(self, box_id: UUID | str) -> BoxRecord:
@@ -163,12 +167,13 @@ class BoxApiClient:
     def open_python(self, box_id: UUID | str) -> BoxShell:
         return self._open_shell(box_id, "python")
 
-    def list_files(self, box_id: UUID | str, path: str) -> list:
+    def list_files(self, box_id: UUID | str, path: str) -> list[FileNode]:
         response = self._request(
             {"type": "fs_list", "box_id": str(box_id), "path": path},
             "files",
         )
-        return [file_node_from_dict(item) for item in response["entries"]]
+        entries = cast(list[WireObject], response["entries"])
+        return [file_node_from_dict(item) for item in entries]
 
     def read_file(self, box_id: UUID | str, path: str, limit: int) -> ReadFileResult:
         response = self._request(
@@ -239,7 +244,8 @@ class BoxApiClient:
             {"type": "checkpoint_list", "box_id": str(box_id)},
             "checkpoint_list",
         )
-        return [checkpoint_record_from_dict(item) for item in response["checkpoints"]]
+        checkpoints = cast(list[WireObject], response["checkpoints"])
+        return [checkpoint_record_from_dict(item) for item in checkpoints]
 
     def checkpoint_restore(
         self,
@@ -342,7 +348,7 @@ class BoxApiClient:
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(file.data)
 
-    def _collect_exec(self, request: dict[str, Any]) -> CompletedExecution:
+    def _collect_exec(self, request: WireObject) -> CompletedExecution:
         request_id = self._transport.next_request_id()
         request["request_id"] = request_id
         _, events = self._transport.open_exec_stream(request)
@@ -351,18 +357,19 @@ class BoxApiClient:
         output = bytearray()
         exit_status = None
         while True:
-            event = events.get()
-            if isinstance(event, Exception):
-                raise event
+            item = events.get()
+            if isinstance(item, BaseException):
+                raise item
+            event = cast(WireObject, item)
             if event["type"] == "exec_output":
-                payload = base64.b64decode(event["data"])
+                payload = base64.b64decode(cast(str, event["data"]))
                 output.extend(payload)
                 if event["stream"] == "stdout":
                     stdout.extend(payload)
                 else:
                     stderr.extend(payload)
                 continue
-            exit_status = exec_exit_from_raw(event["status"])
+            exit_status = exec_exit_from_raw(cast(str | dict, event["status"]))
             break
         return CompletedExecution(
             exit_status=exit_status or exec_exit_from_raw("killed"),
@@ -380,7 +387,7 @@ class BoxApiClient:
         shell_id = response["shell_id"]
         return BoxShell(self._transport, shell_id, self._transport.register_shell(shell_id))
 
-    def _request(self, request: dict[str, Any], expected_type: str) -> dict[str, Any]:
+    def _request(self, request: WireObject, expected_type: str) -> WireObject:
         request_id = self._transport.next_request_id()
         request["request_id"] = request_id
         return self._transport.request_response(request, expected_type)

@@ -10,6 +10,7 @@ import {
   completedExecution,
   execExitFromWire,
   fileNodeFromWire,
+  imageManifestFromWire,
   objectValue,
   readFileFromWire,
   userConfigFromWire
@@ -22,8 +23,10 @@ import {
   CheckpointRestoreMode,
   CompletedExecution,
   FileNode,
+  ImageBuildOptions,
   ReadFileResult,
   UserConfig,
+  VmImageManifest,
   WorkspaceCheckpointRecord
 } from "./models.js";
 import { BoxShell } from "./shell.js";
@@ -53,11 +56,11 @@ export class BoxApiClient {
   static async connectAsBox(
     endpoint: string,
     boxId: string,
-    boxToken?: string | null
+    boxToken: string
   ): Promise<BoxApiClient> {
     const transport = await Transport.connect(
       endpoint,
-      { type: "authenticate_box", box_id: boxId, box_token: boxToken ?? null },
+      { type: "authenticate_box", box_id: boxId, box_token: boxToken },
       { type: "box", box_id: boxId }
     );
     return new BoxApiClient(transport);
@@ -77,9 +80,39 @@ export class BoxApiClient {
     return boxRecordFromWire(objectValue(response.record));
   }
 
-  async createBox(): Promise<BoxRecord> {
-    const response = await this.request({ type: "new_box" }, "box");
+  async createBox(options: { image?: string | null } = {}): Promise<BoxRecord> {
+    const response = await this.request({ type: "new_box", image: options.image ?? null }, "box");
     return boxRecordFromWire(objectValue(response.record));
+  }
+
+  async buildImage(options: ImageBuildOptions): Promise<VmImageManifest> {
+    const response = await this.request(
+      {
+        type: "image_build",
+        name: options.name,
+        apk: options.apk ?? [],
+        pip: options.pip ?? [],
+        npm: options.npm ?? [],
+        min_image_mib: options.minImageMib ?? 512,
+        force_refresh: options.forceRefresh ?? false
+      },
+      "image"
+    );
+    return imageManifestFromWire(objectValue(response.image));
+  }
+
+  async listImages(): Promise<VmImageManifest[]> {
+    const response = await this.request({ type: "image_list" }, "image_list");
+    return (response.images as WireObject[]).map(imageManifestFromWire);
+  }
+
+  async inspectImage(name: string): Promise<VmImageManifest> {
+    const response = await this.request({ type: "image_inspect", name }, "image");
+    return imageManifestFromWire(objectValue(response.image));
+  }
+
+  async removeImage(name: string): Promise<void> {
+    await this.request({ type: "image_remove", name }, "image_removed");
   }
 
   async startBox(boxId: string): Promise<BoxRecord> {

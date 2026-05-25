@@ -1,3 +1,5 @@
+mod runtime_info;
+
 use std::path::Path;
 use std::sync::Arc;
 use std::{io::Seek, io::SeekFrom, io::Write};
@@ -6,8 +8,11 @@ use crate::auth::{
     AdminCredential, AdminStore, BoxCredentialStore, UserConfig, read_user_config,
     write_user_config,
 };
+use crate::backend::libkrun;
 use crate::boxes::{BoxManager, LocalBoxService};
+use crate::config::RuntimeConfig;
 use crate::host_log;
+use crate::private_fs::{ensure_private_dir, open_private_file_truncate, write_private_file};
 use crate::runtime::{AgentSandboxService, SandboxService};
 use crate::sagens::config::{
     SagensPaths, build_runtime_config_for_endpoint, validate_host_process_binary,
@@ -16,12 +21,16 @@ use crate::sagens::recovery::{
     recorded_daemon_uses_binary, recover_startup_state, terminate_recorded_daemon,
 };
 use crate::{Result, SandboxError, serve_box_api_websocket};
+pub(crate) use runtime_info::read_runtime_info;
+use runtime_info::write_runtime_info;
 
 const DAEMON_WAIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 pub async fn run_foreground(paths: &SagensPaths, host_binary: &Path) -> Result<()> {
     validate_host_process_binary(host_binary)?;
     let config = build_runtime_config_for_endpoint(&paths.state_dir, &paths.endpoint)?;
+    ensure_private_dir(&paths.state_dir, "creating daemon state directory")?;
+    preflight_host_runtime(host_binary, &config).await?;
     host_log::emit(
         "daemon",
         format!(
@@ -47,14 +56,20 @@ pub async fn run_foreground(paths: &SagensPaths, host_binary: &Path) -> Result<(
     let box_credential_store = Arc::new(BoxCredentialStore::new(&config.state_dir));
     bootstrap_admin_if_needed(&admin_store).await?;
     write_pid_file(&paths.pid_path).await?;
+    let image_api = crate::box_api::ImageApiConfig::from_runtime_config(&config).await?;
     let handle = serve_box_api_websocket(
         config.control.bind_addr,
         service,
         admin_store,
         box_credential_store,
-        config.isolation_mode,
+        image_api,
     )
     .await?;
+    if let Err(error) = write_runtime_info(&paths.state_dir, config.isolation_mode) {
+        handle.shutdown();
+        let _ = handle.wait().await;
+        return Err(error);
+    }
     host_log::emit(
         "daemon",
         format!(
@@ -87,17 +102,10 @@ pub async fn ensure_started(paths: &SagensPaths, host_binary: &Path) -> Result<(
     }
     recover_startup_state(paths, &mut user_config).await?;
     validate_host_process_binary(host_binary)?;
-    let _ = build_runtime_config_for_endpoint(&paths.state_dir, &paths.endpoint)?;
-    if let Some(parent) = paths.state_dir.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|error| SandboxError::io("creating daemon parent state directory", error))?;
-    }
-    tokio::fs::create_dir_all(&paths.state_dir)
-        .await
-        .map_err(|error| SandboxError::io("creating daemon state directory", error))?;
-    spawn_background_daemon(paths, host_binary, &user_config)
-        .map_err(|error| SandboxError::io("spawning sagens daemon", error))?;
+    let runtime_config = build_runtime_config_for_endpoint(&paths.state_dir, &paths.endpoint)?;
+    preflight_host_runtime(host_binary, &runtime_config).await?;
+    ensure_private_dir(&paths.state_dir, "creating daemon state directory")?;
+    spawn_background_daemon(paths, host_binary, &user_config)?;
     wait_for_daemon(&user_config, &paths.daemon_log_path).await?;
     Ok((user_config, false))
 }
@@ -106,9 +114,15 @@ fn spawn_background_daemon(
     paths: &SagensPaths,
     host_binary: &Path,
     user_config: &UserConfig,
-) -> std::io::Result<()> {
-    let stdout = std::fs::File::create(&paths.daemon_log_path)?;
-    let stderr = stdout.try_clone()?;
+) -> Result<()> {
+    let stdout = open_private_file_truncate(
+        &paths.daemon_log_path,
+        "creating daemon log directory",
+        "opening daemon log file",
+    )?;
+    let stderr = stdout
+        .try_clone()
+        .map_err(|error| SandboxError::io("cloning daemon log file", error))?;
     let mut command = std::process::Command::new(host_binary);
     command
         .arg("daemon")
@@ -138,7 +152,10 @@ fn spawn_background_daemon(
             });
         }
     }
-    command.spawn().map(|_| ())
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| SandboxError::io("spawning sagens daemon", error))
 }
 
 pub async fn print_log(paths: &SagensPaths, tail: Option<usize>, follow: bool) -> Result<()> {
@@ -249,6 +266,10 @@ async fn ensure_user_config(paths: &SagensPaths) -> Result<UserConfig> {
     Ok(config)
 }
 
+async fn preflight_host_runtime(host_binary: &Path, config: &RuntimeConfig) -> Result<()> {
+    libkrun::preflight_secure_runner(host_binary, config).await
+}
+
 async fn wait_for_daemon(config: &UserConfig, daemon_log_path: &Path) -> Result<()> {
     let deadline = std::time::Instant::now() + DAEMON_WAIT_TIMEOUT;
     loop {
@@ -320,14 +341,12 @@ pub(crate) async fn bootstrap_admin(
 }
 
 async fn write_pid_file(path: &Path) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|error| SandboxError::io("creating daemon pid directory", error))?;
-    }
-    tokio::fs::write(path, format!("{}\n", std::process::id()))
-        .await
-        .map_err(|error| SandboxError::io("writing daemon pid file", error))
+    write_private_file(
+        path,
+        format!("{}\n", std::process::id()).as_bytes(),
+        "creating daemon pid directory",
+        "writing daemon pid file",
+    )
 }
 
 pub(super) async fn cleanup_pid_file(paths: &SagensPaths) -> Result<()> {

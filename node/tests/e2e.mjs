@@ -21,15 +21,9 @@ await withDaemon(async (daemon) => {
   assert.match(python.stdoutText, /seed/);
 
   const shell = await box.openBash();
+  await readShellUntil(shell, /\$ /);
   await shell.sendInput("printf 'shell-ok\\n'\nexit\n");
-  let shellOutput = "";
-  for await (const event of shell.iterEvents()) {
-    if ("text" in event) {
-      shellOutput += event.text;
-    } else {
-      assert.equal(event.code, 0);
-    }
-  }
+  const shellOutput = await readShellToExit(shell);
   assert.match(shellOutput, /shell-ok/);
 
   const checkpoint = await box.checkpoint.create("seed", { scope: "node-e2e" });
@@ -60,3 +54,31 @@ await withDaemon(async (daemon) => {
 });
 
 console.log("node full e2e passed");
+
+async function readShellUntil(shell, pattern) {
+  let output = "";
+  for await (const event of shell.iterEvents()) {
+    if ("text" in event) {
+      output += event.text;
+    } else {
+      assert.equal(event.code, 0);
+      return output;
+    }
+    if (pattern.test(output)) {
+      return output;
+    }
+  }
+  return output;
+}
+
+async function readShellToExit(shell) {
+  let output = "";
+  for await (const event of shell.iterEvents()) {
+    if ("text" in event) {
+      output += event.text;
+    } else {
+      assert.equal(event.code, 0);
+    }
+  }
+  return output;
+}

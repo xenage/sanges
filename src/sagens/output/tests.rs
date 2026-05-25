@@ -39,8 +39,9 @@ fn sample_box_record(status: BoxStatus, runtime_usage: Option<BoxRuntimeUsage>) 
     BoxRecord {
         box_id: Uuid::nil(),
         name: None,
+        image: crate::images::BASE_IMAGE_NAME.into(),
         status,
-        settings: Some(sample_settings()),
+        settings: sample_settings(),
         runtime_usage,
         workspace_path: PathBuf::from("/workspace.raw"),
         active_sandbox_id: None,
@@ -62,7 +63,7 @@ fn formats_running_resources_from_runtime_usage() {
             process_count: 23,
         }),
     );
-    let settings = record.settings.as_ref().expect("settings");
+    let settings = &record.settings;
 
     assert_eq!(format_box_cpu_setting(&record, settings), "1.25 / 2");
     assert_eq!(
@@ -76,7 +77,7 @@ fn formats_running_resources_from_runtime_usage() {
 #[test]
 fn formats_running_resources_as_unknown_when_usage_is_missing() {
     let record = sample_box_record(BoxStatus::Running, None);
-    let settings = record.settings.as_ref().expect("settings");
+    let settings = &record.settings;
 
     assert_eq!(format_box_cpu_setting(&record, settings), "— / 2");
     assert_eq!(format_box_memory_setting(&record, settings), "— / 2GiB");
@@ -87,7 +88,7 @@ fn formats_running_resources_as_unknown_when_usage_is_missing() {
 #[test]
 fn formats_inactive_resources_as_zero_over_configured_limit() {
     let record = sample_box_record(BoxStatus::Stopped, None);
-    let settings = record.settings.as_ref().expect("settings");
+    let settings = &record.settings;
 
     assert_eq!(format_box_cpu_setting(&record, settings), "0 / 2");
     assert_eq!(format_box_memory_setting(&record, settings), "0MiB / 2GiB");

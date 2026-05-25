@@ -29,14 +29,13 @@ pub async fn preflight_runtime(config: &RuntimeConfig) -> Result<HardeningStatus
             SandboxError::invalid("secure isolation mode requires SAGENS_CGROUP_PARENT")
         })?;
         validate_cgroup_parent(parent).await?;
-
-        let mut status = HardeningStatus::default();
-        if config.hardening.enable_landlock {
-            status.warnings.push(
-                "landlock support is not yet enabled; secure mode currently relies on cgroup and process isolation".into(),
-            );
+        if !config.hardening.enable_landlock {
+            return Err(SandboxError::invalid(
+                "secure isolation mode requires Landlock host hardening",
+            ));
         }
-        Ok(status)
+        let _ = landlock_abi()?;
+        Ok(HardeningStatus::default())
     }
 }
 
@@ -49,14 +48,7 @@ pub async fn attach_backend_process(
     if let Some(parent) = &config.cgroup_parent {
         attach_to_cgroup(parent, sandbox_id, pid, policy).await?;
     }
-
-    let mut status = HardeningStatus::default();
-    if config.enable_landlock && !cfg!(target_os = "linux") {
-        status
-            .warnings
-            .push("landlock requested on a non-Linux host; running without it".into());
-    }
-    Ok(status)
+    Ok(HardeningStatus::default())
 }
 
 async fn attach_to_cgroup(
@@ -147,4 +139,26 @@ async fn validate_cgroup_parent(parent: &std::path::Path) -> Result<()> {
     result?;
     cleanup?;
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+const LANDLOCK_CREATE_RULESET_VERSION: libc::c_uint = 1;
+
+#[cfg(target_os = "linux")]
+pub(crate) fn landlock_abi() -> Result<u32> {
+    let rc = unsafe {
+        libc::syscall(
+            libc::SYS_landlock_create_ruleset,
+            std::ptr::null::<libc::c_void>(),
+            0usize,
+            LANDLOCK_CREATE_RULESET_VERSION,
+        )
+    };
+    if rc >= 1 {
+        return Ok(rc as u32);
+    }
+    let error = std::io::Error::last_os_error();
+    Err(SandboxError::UnsupportedHost(format!(
+        "secure isolation mode requires Linux Landlock support: {error}"
+    )))
 }

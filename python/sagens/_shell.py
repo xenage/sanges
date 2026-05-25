@@ -3,9 +3,10 @@ from __future__ import annotations
 import base64
 import queue
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Iterator, cast
 
 from ._transport import _Transport
+from ._wire import QueueItem, WireObject
 
 
 @dataclass(frozen=True)
@@ -19,7 +20,7 @@ class ShellExitEvent:
 
 
 class BoxShell:
-    def __init__(self, transport: _Transport, shell_id: str, events: queue.Queue[object]) -> None:
+    def __init__(self, transport: _Transport, shell_id: str, events: queue.Queue[QueueItem]) -> None:
         self.shell_id = shell_id
         self._transport = transport
         self._events = events
@@ -56,12 +57,13 @@ class BoxShell:
         )
 
     def next_event(self) -> ShellOutputEvent | ShellExitEvent:
-        event = self._events.get()
-        if isinstance(event, Exception):
-            raise event
+        item = self._events.get()
+        if isinstance(item, BaseException):
+            raise item
+        event = cast(WireObject, item)
         if event["type"] == "shell_output":
-            return ShellOutputEvent(data=base64.b64decode(event["data"]))
-        return ShellExitEvent(code=event["code"])
+            return ShellOutputEvent(data=base64.b64decode(cast(str, event["data"])))
+        return ShellExitEvent(code=cast(int, event["code"]))
 
     def iter_events(self) -> Iterator[ShellOutputEvent | ShellExitEvent]:
         while True:

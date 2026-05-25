@@ -1,4 +1,6 @@
 mod access;
+#[path = "dispatch/images.rs"]
+mod images;
 
 use std::sync::Arc;
 
@@ -6,7 +8,7 @@ use super::execution::{
     decode_bytes, python_exec, remove_shell, send_shell_event, shell_handle, shell_request,
     spawn_exec_stream,
 };
-use super::{ShellSessionEntry, ShellSessions, WsWriter, checkpoints, send_event};
+use super::{ImageApiConfig, ShellSessionEntry, ShellSessions, WsWriter, checkpoints, send_event};
 use crate::auth::{AdminStore, BoxCredentialStore};
 use crate::box_api::protocol::{BoxEvent, BoxRequest, BoxResponse, Principal};
 use crate::boxes::BoxManager;
@@ -15,17 +17,15 @@ use crate::{Result, SandboxError};
 
 pub(crate) use access::{authorize_box, require_admin, send_response};
 
-pub(super) enum ConnectionAction {
-    KeepOpen,
-    Close,
-    ShutdownServer,
-}
+#[rustfmt::skip]
+pub(super) enum ConnectionAction { KeepOpen, Close, ShutdownServer }
 
 #[derive(Clone)]
 pub(super) struct DispatchContext {
     pub service: Arc<dyn BoxManager>,
     pub admin_store: Arc<AdminStore>,
     pub box_credential_store: Arc<BoxCredentialStore>,
+    pub image_api: ImageApiConfig,
     pub writer: WsWriter,
     pub shells: ShellSessions,
     pub endpoint: String,
@@ -50,23 +50,31 @@ pub(super) async fn dispatch_request(
             let record = context.service.get_box(box_id).await?;
             send_response(&context.writer, request_id, BoxResponse::Box { record }).await?;
         }
-        BoxRequest::NewBox { request_id } => {
+        BoxRequest::NewBox { request_id, image } => {
             require_admin(&principal)?;
-            let record = context.service.create_box().await?;
+            let record = context.service.create_box_from_image(image).await?;
             send_response(&context.writer, request_id, BoxResponse::Box { record }).await?;
         }
+        image_request @ (BoxRequest::ImageBuild { .. }
+        | BoxRequest::ImageList { .. }
+        | BoxRequest::ImageInspect { .. }
+        | BoxRequest::ImageRemove { .. }) => {
+            require_admin(&principal)?;
+            images::dispatch_image_request(&context.writer, context.image_api, image_request)
+                .await?;
+        }
         BoxRequest::StartBox { request_id, box_id } => {
-            authorize_box(&principal, box_id)?;
+            require_admin(&principal)?;
             let record = context.service.start_box(box_id).await?;
             send_response(&context.writer, request_id, BoxResponse::Box { record }).await?;
         }
         BoxRequest::StopBox { request_id, box_id } => {
-            authorize_box(&principal, box_id)?;
+            require_admin(&principal)?;
             let record = context.service.stop_box(box_id).await?;
             send_response(&context.writer, request_id, BoxResponse::Box { record }).await?;
         }
         BoxRequest::RemoveBox { request_id, box_id } => {
-            authorize_box(&principal, box_id)?;
+            require_admin(&principal)?;
             context.service.remove_box(box_id).await?;
             send_response(
                 &context.writer,
@@ -80,7 +88,7 @@ pub(super) async fn dispatch_request(
             box_id,
             value,
         } => {
-            authorize_box(&principal, box_id)?;
+            require_admin(&principal)?;
             let record = context.service.set_box_setting(box_id, value).await?;
             send_response(&context.writer, request_id, BoxResponse::Box { record }).await?;
         }
@@ -217,6 +225,7 @@ pub(super) async fn dispatch_request(
             limit,
         } => {
             authorize_box(&principal, box_id)?;
+            let limit = crate::workspace::validate_read_limit(limit)?;
             let file = context.service.read_file(box_id, &path, limit).await?;
             send_response(&context.writer, request_id, BoxResponse::File { file }).await?;
         }

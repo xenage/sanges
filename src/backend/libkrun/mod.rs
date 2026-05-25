@@ -1,6 +1,7 @@
 mod config;
 mod instance;
 mod loader;
+mod preflight;
 pub mod runner;
 
 use std::fs::File;
@@ -23,6 +24,7 @@ use crate::{Result, SandboxError};
 
 const HOST_BINARY_ENV: &str = "SAGENS_HOST_BINARY";
 pub(super) const RUNNER_STARTUP_FD_ENV: &str = "SAGENS_LIBKRUN_STARTUP_FD";
+pub use preflight::preflight_secure_runner;
 
 pub struct LibkrunBackend;
 
@@ -39,11 +41,9 @@ impl Backend for LibkrunBackend {
             RunnerMode::Thread => {}
             RunnerMode::SelfSubprocess => return launch_self_runner(request).await,
         }
-        prepare_runner_artifacts(
-            &request.run_layout,
-            request.hardening.runner_log_limit_bytes,
-        )?;
+        prepare_runner_artifacts(&request.run_layout)?;
         let config = config::build_runner_config(&request);
+        config.validate_secure_constraints()?;
         config::write_debug_runner_config(&request.run_layout.runner_config, &config).await?;
         let runner_log = request.run_layout.runner_log.clone();
         let (started_tx, started_rx) = sync_channel(1);
@@ -138,10 +138,8 @@ fn is_sagens_self_runner_binary(stem: &str) -> bool {
 
 async fn launch_self_runner(request: BackendLaunchRequest) -> Result<BackendLaunchOutput> {
     let config = config::build_runner_config(&request);
-    prepare_runner_artifacts(
-        &request.run_layout,
-        request.hardening.runner_log_limit_bytes,
-    )?;
+    config.validate_secure_constraints()?;
+    prepare_runner_artifacts(&request.run_layout)?;
     config::write_debug_runner_config(&request.run_layout.runner_config, &config).await?;
     let current_exe = resolve_runner_executable("discovering sagens executable")?;
     let mut command = tokio::process::Command::new(current_exe);
@@ -174,6 +172,7 @@ async fn spawn_runner_process(
         .try_clone()
         .map_err(|error| SandboxError::io("cloning libkrun runner log", error))?;
     command
+        .kill_on_drop(true)
         .stdin(Stdio::null())
         .stdout(Stdio::from(log_file))
         .stderr(Stdio::from(stderr));
@@ -215,12 +214,31 @@ struct StartupGate {
 
 fn create_startup_gate() -> Result<StartupGate> {
     let mut fds = [0; 2];
+    #[cfg(target_os = "linux")]
+    let rc = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) };
+    #[cfg(not(target_os = "linux"))]
     let rc = unsafe { libc::pipe(fds.as_mut_ptr()) };
     if rc != 0 {
         return Err(SandboxError::io(
             "creating secure runner startup gate",
             std::io::Error::last_os_error(),
         ));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let flags = unsafe { libc::fcntl(fds[0], libc::F_GETFD) };
+        if flags < 0 {
+            return Err(SandboxError::io(
+                "reading secure runner startup gate flags",
+                std::io::Error::last_os_error(),
+            ));
+        }
+        if unsafe { libc::fcntl(fds[0], libc::F_SETFD, flags & !libc::FD_CLOEXEC) } != 0 {
+            return Err(SandboxError::io(
+                "updating secure runner startup gate flags",
+                std::io::Error::last_os_error(),
+            ));
+        }
     }
     Ok(StartupGate {
         read_end: unsafe { OwnedFd::from_raw_fd(fds[0]) },
@@ -241,10 +259,7 @@ fn release_startup_gate(gate: StartupGate) -> Result<()> {
     Ok(())
 }
 
-fn prepare_runner_artifacts(
-    run_layout: &crate::workspace::RunLayout,
-    _runner_log_limit_bytes: u64,
-) -> Result<()> {
+fn prepare_runner_artifacts(run_layout: &crate::workspace::RunLayout) -> Result<()> {
     if run_layout.vsock_socket.exists() {
         std::fs::remove_file(&run_layout.vsock_socket)
             .map_err(|error| SandboxError::io("removing stale guest rpc socket", error))?;

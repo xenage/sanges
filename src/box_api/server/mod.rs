@@ -4,6 +4,7 @@ mod execution;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures_util::{SinkExt, StreamExt};
@@ -16,7 +17,7 @@ use uuid::Uuid;
 use crate::auth::{AdminStore, BoxCredentialStore};
 use crate::backend::ShellHandle;
 use crate::boxes::BoxManager;
-use crate::config::IsolationMode;
+use crate::config::{GuestConfig, RuntimeConfig};
 use crate::{Result, SandboxError};
 
 use super::protocol::{BoxEvent, ClientMessage, Principal, ServerMessage};
@@ -42,10 +43,31 @@ struct ConnectionContext {
     service: Arc<dyn BoxManager>,
     admin_store: Arc<AdminStore>,
     box_credential_store: Arc<BoxCredentialStore>,
-    isolation_mode: IsolationMode,
+    image_api: ImageApiConfig,
     endpoint: String,
     shutdown_tx: watch::Sender<bool>,
     shutdown_rx: watch::Receiver<bool>,
+}
+
+#[derive(Clone)]
+pub struct ImageApiConfig {
+    pub state_dir: PathBuf,
+    pub base_guest: GuestConfig,
+}
+
+impl ImageApiConfig {
+    pub async fn from_runtime_config(config: &RuntimeConfig) -> Result<Self> {
+        let base_guest = crate::bundle::resolve_guest_paths(
+            &config.state_dir,
+            &config.artifact_bundle.bundle_id,
+            &config.guest,
+        )
+        .await?;
+        Ok(Self {
+            state_dir: config.state_dir.clone(),
+            base_guest,
+        })
+    }
 }
 
 pub struct BoxApiServerHandle {
@@ -75,7 +97,7 @@ pub async fn serve_box_api_websocket(
     service: Arc<dyn BoxManager>,
     admin_store: Arc<AdminStore>,
     box_credential_store: Arc<BoxCredentialStore>,
-    isolation_mode: IsolationMode,
+    image_api: ImageApiConfig,
 ) -> Result<BoxApiServerHandle> {
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let listener = TcpListener::bind(bind_addr)
@@ -102,7 +124,7 @@ pub async fn serve_box_api_websocket(
                         service: service.clone(),
                         admin_store: admin_store.clone(),
                         box_credential_store: box_credential_store.clone(),
-                        isolation_mode,
+                        image_api: image_api.clone(),
                         endpoint: endpoint.clone(),
                         shutdown_tx: shutdown_tx.clone(),
                         shutdown_rx: shutdown_rx.clone(),
@@ -175,7 +197,6 @@ async fn handle_connection(
                             &writer,
                             &context.box_credential_store,
                             &mut principal,
-                            context.isolation_mode,
                             box_id,
                             box_token,
                         )
@@ -202,6 +223,7 @@ async fn handle_connection(
                                 service: context.service.clone(),
                                 admin_store: context.admin_store.clone(),
                                 box_credential_store: context.box_credential_store.clone(),
+                                image_api: context.image_api.clone(),
                                 writer: writer.clone(),
                                 shells: shells.clone(),
                                 endpoint: context.endpoint.clone(),
@@ -281,33 +303,22 @@ async fn authenticate_box(
     writer: &WsWriter,
     box_credential_store: &BoxCredentialStore,
     principal: &mut Option<Principal>,
-    isolation_mode: IsolationMode,
     box_id: Uuid,
-    box_token: Option<String>,
+    box_token: String,
 ) -> Result<bool> {
-    if isolation_mode == IsolationMode::Secure {
-        let Some(token) = box_token else {
-            send_event(
-                writer,
-                &BoxEvent::Error {
-                    request_id: None,
-                    message: "box authentication requires a box_token in secure mode".into(),
-                },
-            )
-            .await?;
-            return Ok(true);
-        };
-        if !box_credential_store.authenticate(box_id, &token).await? {
-            send_event(
-                writer,
-                &BoxEvent::Error {
-                    request_id: None,
-                    message: "authentication failed".into(),
-                },
-            )
-            .await?;
-            return Ok(true);
-        }
+    if !box_credential_store
+        .authenticate(box_id, &box_token)
+        .await?
+    {
+        send_event(
+            writer,
+            &BoxEvent::Error {
+                request_id: None,
+                message: "authentication failed".into(),
+            },
+        )
+        .await?;
+        return Ok(true);
     }
     let authenticated = Principal::Box { box_id };
     *principal = Some(authenticated.clone());

@@ -78,7 +78,13 @@ impl Builder {
         self.fetch_rootfs(&args.arch, &rootfs_tar, &tar_name)?;
         self.fetch_indexes(&indexes, &args.arch)?;
         let (packages, providers) = load_indexes(&indexes)?;
-        let resolved = resolve_packages(&packages, &providers, crate::WANTED_PACKAGES)?;
+        let mut wanted = crate::BASE_PACKAGES
+            .iter()
+            .map(|package| (*package).to_owned())
+            .collect::<Vec<_>>();
+        wanted.extend(args.apk_packages.iter().cloned());
+        let wanted_refs = wanted.iter().map(String::as_str).collect::<Vec<_>>();
+        let resolved = resolve_packages(&packages, &providers, &wanted_refs)?;
         download_packages(&self.client, &apk_dir, &args.arch, &resolved)?;
         rebuild_rootfs(&rootfs_tar, &apk_dir, &resolved, &rootfs_dir, &guest_agent)?;
 

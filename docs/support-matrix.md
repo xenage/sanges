@@ -6,18 +6,17 @@ If you are evaluating `sagens`, one of the first questions is whether the host
 you want to run on is part of the supported path, and what runtime stack sits
 under each BOX on that host.
 
-This page is the explicit support contract for the current libkrun-only
-backend.
+This page is the explicit support contract for the current secure host runtime.
 
 ## Host and SDK matrix
 
 | Host OS | CPU | CLI / host binary | Python SDK | Node SDK | Notes |
 | --- | --- | --- | --- | --- | --- |
-| macOS | arm64 (Apple Silicon) | Supported | Supported on Python `3.11+` | Supported on Node `20+` | Uses the macOS `arm64` platform package / wheel path |
-| Linux | x86_64 | Supported | Supported on Python `3.11+` | Supported on Node `20+` | Full microVM runtime requires `/dev/kvm` |
-| Linux | arm64 / aarch64 | Supported | Supported on Python `3.11+` | Supported on Node `20+` | Full microVM runtime requires `/dev/kvm` |
+| Linux | x86_64 | Supported | Supported on Python `3.11+` | Supported on Node `20+` | Secure mode requires `/dev/kvm`, delegated cgroup access, and Linux Landlock |
+| Linux | arm64 / aarch64 | Supported | Supported on Python `3.11+` | Supported on Node `20+` | Secure mode requires `/dev/kvm`, delegated cgroup access, and Linux Landlock |
+| macOS | arm64 (Apple Silicon) | Dev/test only | Dev/test only | Dev/test only | Requires explicit insecure compat opt-in; secure host isolation is not shipped |
 
-Not supported by the current backend:
+Not supported by the current secure backend:
 
 - Windows
 - macOS `x86_64`
@@ -50,8 +49,9 @@ Under the hood, `sagens` uses:
 
 Practical notes:
 
-- This is the only supported macOS host path.
-- The current libkrun-only backend does not support macOS `x86_64`.
+- This host path is not part of the shipped secure runtime.
+- Running here requires explicit insecure compatibility opt-in.
+- The current backend does not support macOS `x86_64`.
 
 ### Linux x86_64
 
@@ -59,14 +59,17 @@ Under the hood, `sagens` uses:
 
 - vendored `libkrun` as the microVM runtime library
 - the Linux `KVM` backend exposed through `/dev/kvm`
-- a guest kernel materialized from the prebuilt `libkrunfw-x86_64` bundle
+- a direct-boot Alpine guest kernel extracted from the pinned `linux-virt` package
 - the pinned local `linux-loader` override in `third_party/upstream/linux-loader`
   so the Linux build uses the same `vm-memory` ABI as `libkrun`
+- a secure runner sandbox with Linux namespaces, chroot, Landlock, and seccomp
 
 Practical notes:
 
 - This is the main full-e2e path exercised in CI.
 - The Linux runtime path needs `/dev/kvm` for real microVM execution.
+- `secure` mode requires delegated cgroup access through `SAGENS_CGROUP_PARENT`.
+- `secure` startup runs a built-in runner harness and fails closed if the helper sandbox cannot establish namespaces, chroot, Landlock, and seccomp on the current host.
 - No separate firmware layer is used on this path.
 
 ### Linux arm64 / aarch64
@@ -75,13 +78,16 @@ Under the hood, `sagens` uses:
 
 - vendored `libkrun` as the microVM runtime library
 - the Linux `KVM` backend exposed through `/dev/kvm`
-- a guest kernel materialized from the prebuilt `libkrunfw-aarch64` bundle
+- a direct-boot Alpine guest kernel extracted from the pinned `linux-virt` package
 - the pinned local `linux-loader` override in `third_party/upstream/linux-loader`
   so the Linux build uses the same `vm-memory` ABI as `libkrun`
+- a secure runner sandbox with Linux namespaces, chroot, Landlock, and seccomp
 
 Practical notes:
 
 - The Linux runtime path needs `/dev/kvm` for real microVM execution.
+- `secure` mode requires delegated cgroup access through `SAGENS_CGROUP_PARENT`.
+- `secure` startup runs a built-in runner harness and fails closed if the helper sandbox cannot establish namespaces, chroot, Landlock, and seccomp on the current host.
 - No separate firmware layer is used on this path.
 
 ## Packaging notes

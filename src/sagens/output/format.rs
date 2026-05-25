@@ -1,6 +1,4 @@
-use crate::boxes::{
-    BoxBooleanSetting, BoxNumericSetting, BoxRecord, BoxRuntimeUsage, BoxSettings, BoxStatus,
-};
+use crate::boxes::{BoxBooleanSetting, BoxRecord, BoxRuntimeUsage, BoxSettings, BoxStatus};
 
 pub(super) fn format_box_network_setting(setting: &BoxBooleanSetting) -> String {
     format_bool(setting.current).to_string()
@@ -113,27 +111,5 @@ pub(super) fn format_bytes(value: u64) -> String {
         format!("{:.1} KiB", value as f64 / 1024.0)
     } else {
         format!("{value} B")
-    }
-}
-
-pub(super) fn fallback_settings() -> BoxSettings {
-    BoxSettings {
-        cpu_cores: BoxNumericSetting { current: 1, max: 1 },
-        memory_mb: BoxNumericSetting {
-            current: 128,
-            max: 128,
-        },
-        fs_size_mib: BoxNumericSetting {
-            current: 128,
-            max: 128,
-        },
-        max_processes: BoxNumericSetting {
-            current: 256,
-            max: 256,
-        },
-        network_enabled: BoxBooleanSetting {
-            current: false,
-            max: false,
-        },
     }
 }

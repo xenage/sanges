@@ -47,6 +47,7 @@ pub fn build_runtime_config_for_endpoint(
     let kernel_image = default_guest_path(ProjectArtifactKind::Kernel, prefer_embedded_assets);
     let kernel_format =
         GuestKernelFormat::detect_from_path(&kernel_image, GuestKernelFormat::default_for_host());
+    let isolation_mode = parse_isolation_mode()?;
     Ok(RuntimeConfig {
         state_dir: state_dir.to_path_buf(),
         guest: GuestConfig {
@@ -75,9 +76,10 @@ pub fn build_runtime_config_for_endpoint(
             allow_remote_bind: false,
         },
         lifecycle: LifecycleConfig::default(),
-        isolation_mode: parse_isolation_mode()?,
+        isolation_mode,
         hardening: HardeningConfig {
-            enable_landlock: env_flag("SAGENS_ENABLE_LANDLOCK"),
+            enable_landlock: isolation_mode == IsolationMode::Secure
+                || env_flag("SAGENS_ENABLE_LANDLOCK"),
             cgroup_parent: env::var("SAGENS_CGROUP_PARENT")
                 .ok()
                 .filter(|value| !value.is_empty())
@@ -92,6 +94,34 @@ pub fn build_runtime_config_for_endpoint(
         },
         default_policy: SandboxPolicy::default(),
     })
+}
+
+pub async fn resolve_guest_config_for_images(state_dir: &Path) -> Result<GuestConfig> {
+    let prefer_embedded_assets = crate::bundle::has_embedded_assets();
+    let kernel_image = default_guest_path(ProjectArtifactKind::Kernel, prefer_embedded_assets);
+    let kernel_format =
+        GuestKernelFormat::detect_from_path(&kernel_image, GuestKernelFormat::default_for_host());
+    let guest = GuestConfig {
+        kernel_image,
+        kernel_format,
+        rootfs_image: default_guest_path(ProjectArtifactKind::Rootfs, prefer_embedded_assets),
+        firmware: default_firmware_path(prefer_embedded_assets),
+        guest_agent_path: PathBuf::from("/usr/local/bin/sagens-guest-agent"),
+        guest_vsock_port: env::var("SAGENS_GUEST_VSOCK_PORT")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(11_000),
+        boot_timeout: Duration::from_secs(30),
+        guest_uid: default_guest_uid(),
+        guest_gid: default_guest_gid(),
+        guest_tmpfs_mib: 64,
+    };
+    crate::bundle::resolve_guest_paths(
+        state_dir,
+        &env::var("SAGENS_BUNDLE_ID").unwrap_or_else(|_| "sagens".into()),
+        &guest,
+    )
+    .await
 }
 
 #[derive(Clone, Copy)]
@@ -191,14 +221,29 @@ fn optional_path(candidates: &[PathBuf]) -> Option<PathBuf> {
 fn parse_isolation_mode() -> Result<IsolationMode> {
     match env::var("SAGENS_ISOLATION_MODE") {
         Ok(value) if !value.trim().is_empty() => match value.trim().to_ascii_lowercase().as_str() {
-            "compat" => Ok(IsolationMode::Compat),
+            "compat" if insecure_compat_opt_in() => Ok(IsolationMode::Compat),
+            "compat" => Err(SandboxError::invalid(
+                "compat isolation mode is marked insecure and is only available for dev/test; set SAGENS_INSECURE_COMPAT=1 together with SAGENS_ISOLATION_MODE=compat to continue",
+            )),
             "secure" => Ok(IsolationMode::Secure),
             _ => Err(SandboxError::invalid(format!(
                 "unsupported SAGENS_ISOLATION_MODE: {value}"
             ))),
         },
-        _ => Ok(IsolationMode::default_for_host()),
+        _ if secure_defaults_ready() => Ok(IsolationMode::Secure),
+        _ => Err(SandboxError::invalid(
+            "secure isolation is the only supported packaged mode on this host; this host would otherwise fall back to insecure compat. Configure the secure host prerequisites or, for dev/test only, set SAGENS_ISOLATION_MODE=compat and SAGENS_INSECURE_COMPAT=1",
+        )),
     }
+}
+
+fn secure_defaults_ready() -> bool {
+    cfg!(target_os = "linux")
+        && env::var_os("SAGENS_CGROUP_PARENT").is_some_and(|value| !value.is_empty())
+}
+
+fn insecure_compat_opt_in() -> bool {
+    env_flag("SAGENS_INSECURE_COMPAT")
 }
 
 fn default_project_artifact_candidates(kind: ProjectArtifactKind) -> Vec<PathBuf> {
@@ -247,6 +292,53 @@ fn env_flag(name: &str) -> bool {
     )
 }
 
+#[cfg(test)]
+mod tests {
+    use std::sync::{Mutex, OnceLock};
+
+    use super::*;
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env lock")
+    }
+
+    #[test]
+    fn rejects_compat_without_explicit_insecure_opt_in() {
+        let _guard = env_lock();
+        unsafe {
+            env::set_var("SAGENS_ISOLATION_MODE", "compat");
+            env::remove_var("SAGENS_INSECURE_COMPAT");
+            env::remove_var("SAGENS_CGROUP_PARENT");
+        }
+        let error = parse_isolation_mode().expect_err("compat must be gated");
+        assert!(error.to_string().contains("SAGENS_INSECURE_COMPAT=1"));
+        unsafe {
+            env::remove_var("SAGENS_ISOLATION_MODE");
+        }
+    }
+
+    #[test]
+    fn accepts_compat_with_explicit_insecure_opt_in() {
+        let _guard = env_lock();
+        unsafe {
+            env::set_var("SAGENS_ISOLATION_MODE", "compat");
+            env::set_var("SAGENS_INSECURE_COMPAT", "1");
+            env::remove_var("SAGENS_CGROUP_PARENT");
+        }
+        assert_eq!(
+            parse_isolation_mode().expect("compat opt-in"),
+            IsolationMode::Compat
+        );
+        unsafe {
+            env::remove_var("SAGENS_ISOLATION_MODE");
+            env::remove_var("SAGENS_INSECURE_COMPAT");
+        }
+    }
+}
+
 pub fn validate_host_process_binary(host_binary: &Path) -> Result<()> {
     #[cfg(target_os = "macos")]
     {
@@ -288,7 +380,7 @@ fn has_hypervisor_entitlement(output: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+mod host_binary_tests {
     #[cfg(target_os = "macos")]
     use super::has_hypervisor_entitlement;
 

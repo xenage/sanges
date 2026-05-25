@@ -11,6 +11,8 @@ pub struct LibkrunRunnerConfig {
     pub kernel_image: PathBuf,
     pub kernel_format: GuestKernelFormat,
     pub rootfs_image: PathBuf,
+    #[serde(default)]
+    pub cache_image: Option<PathBuf>,
     pub workspace_image: PathBuf,
     pub runtime_dir: PathBuf,
     pub console_output_path: PathBuf,
@@ -30,11 +32,28 @@ pub struct LibkrunRunnerConfig {
 }
 
 impl LibkrunRunnerConfig {
+    pub fn validate_secure_constraints(&self) -> Result<()> {
+        if self.isolation_mode != IsolationMode::Secure {
+            return Ok(());
+        }
+        if self.network_enabled {
+            return Err(SandboxError::invalid(
+                "secure isolation mode does not allow guest networking",
+            ));
+        }
+        if self.uses_krun_init() {
+            return Err(SandboxError::invalid(
+                "secure isolation mode requires a direct block-root guest boot path; init.krun/virtiofs root is not allowed",
+            ));
+        }
+        Ok(())
+    }
+
     pub fn kernel_cmdline(&self) -> String {
         let max_open_files = self.max_processes.saturating_mul(16).clamp(256, 4096);
         if cfg!(target_os = "linux") && self.uses_krun_init() {
             return format!(
-                "reboot=k panic=-1 panic_print=0 nomodule console=hvc0 root=/dev/root rootfstype=virtiofs rw quiet no-kvmapf init=/init.krun sandbox.workspace_device=/dev/vdb sandbox.tmpfs_mib={} sandbox.uid={} sandbox.gid={} sandbox.max_processes={} sandbox.max_open_files={} sandbox.max_file_size_bytes={} sandbox.rpc_port={} sandbox.network_enabled={}",
+                "reboot=k panic=-1 panic_print=0 nomodule console=hvc0 root=/dev/root rootfstype=virtiofs rw quiet no-kvmapf init=/init.krun sandbox.workspace_device=/dev/vdb sandbox.tmpfs_mib={} sandbox.uid={} sandbox.gid={} sandbox.max_processes={} sandbox.max_open_files={} sandbox.max_file_size_bytes={} sandbox.rpc_port={} sandbox.network_enabled={}{}",
                 self.tmpfs_mib,
                 self.guest_uid,
                 self.guest_gid,
@@ -43,6 +62,7 @@ impl LibkrunRunnerConfig {
                 16 * 1024 * 1024u64,
                 self.guest_vsock_port,
                 if self.network_enabled { 1 } else { 0 },
+                self.cache_cmdline_arg(),
             );
         }
         #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
@@ -50,7 +70,7 @@ impl LibkrunRunnerConfig {
         #[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]
         let rpc_transport = "";
         format!(
-            "console=hvc0 root={} ro rootfstype=ext4 rootwait loglevel=8 ignore_loglevel sandbox.workspace_device=/dev/vdb sandbox.tmpfs_mib={} sandbox.uid={} sandbox.gid={} sandbox.max_processes={} sandbox.max_open_files={} sandbox.max_file_size_bytes={} sandbox.rpc_port={} sandbox.network_enabled={}{} panic=-1",
+            "console=hvc0 root={} ro rootfstype=ext4 rootwait loglevel=8 ignore_loglevel sandbox.workspace_device=/dev/vdb sandbox.tmpfs_mib={} sandbox.uid={} sandbox.gid={} sandbox.max_processes={} sandbox.max_open_files={} sandbox.max_file_size_bytes={} sandbox.rpc_port={} sandbox.network_enabled={}{}{} panic=-1",
             self.root_device(),
             self.tmpfs_mib,
             self.guest_uid,
@@ -61,6 +81,7 @@ impl LibkrunRunnerConfig {
             self.guest_vsock_port,
             if self.network_enabled { 1 } else { 0 },
             rpc_transport,
+            self.cache_cmdline_arg(),
         )
     }
 
@@ -73,6 +94,14 @@ impl LibkrunRunnerConfig {
     pub fn root_device(&self) -> &'static str {
         "/dev/vda"
     }
+
+    fn cache_cmdline_arg(&self) -> &'static str {
+        if self.cache_image.is_some() {
+            " sandbox.cache_device=/dev/vdc"
+        } else {
+            ""
+        }
+    }
 }
 
 pub fn build_runner_config(request: &BackendLaunchRequest) -> LibkrunRunnerConfig {
@@ -80,6 +109,7 @@ pub fn build_runner_config(request: &BackendLaunchRequest) -> LibkrunRunnerConfi
         kernel_image: request.guest.kernel_image.clone(),
         kernel_format: request.guest.kernel_format,
         rootfs_image: request.guest.rootfs_image.clone(),
+        cache_image: request.cache_image.clone(),
         workspace_image: request.workspace.disk_path.clone(),
         runtime_dir: request.run_layout.runtime_dir.clone(),
         console_output_path: request.run_layout.guest_console_log.clone(),
@@ -130,6 +160,7 @@ mod tests {
             kernel_image: PathBuf::from("/tmp/vmlinuz-virt"),
             kernel_format: GuestKernelFormat::Raw,
             rootfs_image: PathBuf::from("/tmp/rootfs.raw"),
+            cache_image: None,
             workspace_image: PathBuf::from("/tmp/workspace.raw"),
             runtime_dir: PathBuf::from("/tmp/runtime"),
             console_output_path: PathBuf::from("/tmp/guest-console.log"),
@@ -172,6 +203,15 @@ mod tests {
         assert!(!cmdline.contains("init=/init.krun"));
     }
 
+    #[test]
+    fn cache_image_adds_cache_device_cmdline() {
+        let mut config = runner_config();
+        config.firmware = Some(PathBuf::from("/tmp/fw.fd"));
+        config.cache_image = Some(PathBuf::from("/tmp/cache.raw"));
+        let cmdline = config.kernel_cmdline();
+        assert!(cmdline.contains("sandbox.cache_device=/dev/vdc"));
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn non_raw_linux_kernel_uses_direct_root_boot_cmdline() {
@@ -181,5 +221,20 @@ mod tests {
         assert!(!config.uses_krun_init());
         assert!(cmdline.contains(&format!("root={}", config.root_device())));
         assert!(!cmdline.contains("init=/init.krun"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn secure_mode_rejects_krun_init_boot_path() {
+        let mut config = runner_config();
+        config.isolation_mode = IsolationMode::Secure;
+        let error = config
+            .validate_secure_constraints()
+            .expect_err("secure krun-init boot must fail");
+        assert!(
+            error
+                .to_string()
+                .contains("direct block-root guest boot path")
+        );
     }
 }

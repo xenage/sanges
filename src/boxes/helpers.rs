@@ -6,9 +6,7 @@ use crate::host_log;
 use crate::{Result, SandboxError};
 
 use super::service::LocalBoxService;
-use super::{
-    BoxBooleanSetting, BoxNumericSetting, BoxRecord, BoxRuntimeUsage, BoxSettings, BoxStatus,
-};
+use super::{BoxRecord, BoxRuntimeUsage, BoxSettings, BoxStatus};
 impl LocalBoxService {
     pub(super) async fn reconcile_after_restart(&self) -> Result<()> {
         for record in self.boxes.list().await? {
@@ -53,13 +51,7 @@ impl LocalBoxService {
             self.isolation_mode,
             actual_fs_size_mib,
         );
-        record.settings = Some(normalize_settings(
-            record.settings.take(),
-            self.default_policy,
-            self.workspace_config.disk_size_mib,
-            actual_fs_size_mib,
-            detected,
-        ));
+        record.settings = normalize_settings(record.settings, actual_fs_size_mib, detected);
         if record != original {
             self.boxes.write(&record).await?;
         }
@@ -221,34 +213,11 @@ struct BoxCaps {
 }
 
 fn normalize_settings(
-    existing: Option<BoxSettings>,
-    default_policy: crate::config::SandboxPolicy,
-    default_fs_size_mib: u64,
+    existing: BoxSettings,
     actual_fs_size_mib: u64,
     detected: BoxCaps,
 ) -> BoxSettings {
-    let mut settings = existing.unwrap_or(BoxSettings {
-        cpu_cores: BoxNumericSetting {
-            current: default_policy.cpu_cores,
-            max: detected.cpu_cores,
-        },
-        memory_mb: BoxNumericSetting {
-            current: default_policy.memory_mb,
-            max: detected.memory_mb,
-        },
-        fs_size_mib: BoxNumericSetting {
-            current: actual_fs_size_mib.max(default_fs_size_mib),
-            max: detected.fs_size_mib,
-        },
-        max_processes: BoxNumericSetting {
-            current: default_policy.max_processes,
-            max: detected.max_processes,
-        },
-        network_enabled: BoxBooleanSetting {
-            current: default_policy.network_enabled && detected.network_enabled,
-            max: detected.network_enabled,
-        },
-    });
+    let mut settings = existing;
 
     settings.cpu_cores.max = detected.cpu_cores.max(settings.cpu_cores.current);
     settings.cpu_cores.current = settings.cpu_cores.current.clamp(1, settings.cpu_cores.max);

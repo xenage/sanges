@@ -20,18 +20,6 @@ pub enum IsolationMode {
     Secure,
 }
 
-impl IsolationMode {
-    pub fn default_for_host() -> Self {
-        if cfg!(target_os = "linux")
-            && std::env::var_os("SAGENS_CGROUP_PARENT").is_some_and(|value| !value.is_empty())
-        {
-            Self::Secure
-        } else {
-            Self::Compat
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct RuntimeConfig {
     pub state_dir: PathBuf,
@@ -58,7 +46,18 @@ impl RuntimeConfig {
         self.default_policy.validate()?;
         match self.isolation_mode {
             IsolationMode::Compat => {}
-            IsolationMode::Secure if cfg!(target_os = "linux") => {}
+            IsolationMode::Secure if cfg!(target_os = "linux") => {
+                if self.guest.uses_krun_init_boot_path() {
+                    return Err(SandboxError::invalid(
+                        "secure isolation mode requires a direct block-root guest boot path; init.krun/virtiofs root is not allowed",
+                    ));
+                }
+                if self.default_policy.network_enabled {
+                    return Err(SandboxError::invalid(
+                        "secure isolation mode does not allow a network-enabled default policy",
+                    ));
+                }
+            }
             IsolationMode::Secure => {
                 return Err(SandboxError::invalid(
                     "secure isolation mode is only supported on Linux",
@@ -165,6 +164,12 @@ impl GuestKernelFormat {
 }
 
 impl GuestConfig {
+    pub fn uses_krun_init_boot_path(&self) -> bool {
+        cfg!(target_os = "linux")
+            && self.firmware.is_none()
+            && self.kernel_format == GuestKernelFormat::Raw
+    }
+
     pub fn validate(&self) -> Result<()> {
         for (name, path) in [
             ("kernel_image", &self.kernel_image),
@@ -258,6 +263,11 @@ impl HardeningConfig {
                 "secure isolation mode requires SAGENS_CGROUP_PARENT",
             ));
         }
+        if isolation_mode == IsolationMode::Secure && !self.enable_landlock {
+            return Err(SandboxError::invalid(
+                "secure isolation mode requires Landlock host hardening",
+            ));
+        }
         Ok(())
     }
 }
@@ -341,6 +351,7 @@ pub type SandboxPolicy = ExecutionPolicy;
 #[derive(Debug, Clone)]
 pub struct SandboxSpec {
     pub workspace_id: String,
+    pub image: String,
     pub policy: ExecutionPolicy,
     pub restore_commit: Option<String>,
 }
@@ -349,6 +360,7 @@ impl SandboxSpec {
     pub fn new(workspace_id: impl Into<String>) -> Self {
         Self {
             workspace_id: workspace_id.into(),
+            image: crate::images::BASE_IMAGE_NAME.into(),
             policy: ExecutionPolicy::default(),
             restore_commit: None,
         }

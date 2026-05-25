@@ -7,6 +7,7 @@ use tokio::fs;
 use uuid::Uuid;
 
 use crate::config::WorkspaceConfig;
+use crate::private_fs::ensure_private_dir;
 use crate::workspace::validate_persisted_id;
 use crate::{Result, SandboxError};
 
@@ -51,6 +52,7 @@ impl WorkspaceStore {
             self.workspaces_dir(),
             self.runs_dir(),
             self.checkpoints_dir(),
+            self.vsock_dir(),
         ] {
             create_private_dir(&dir).await?;
         }
@@ -139,7 +141,8 @@ impl WorkspaceStore {
         let runtime_dir = root_dir.join("runtime");
         create_private_dir(&root_dir).await?;
         create_private_dir(&runtime_dir).await?;
-        let vsock_socket = PathBuf::from(format!("/tmp/asb-{}.sock", sandbox_id.simple()));
+        create_private_dir(&self.vsock_dir()).await?;
+        let vsock_socket = self.vsock_socket_path(sandbox_id);
         Ok(RunLayout {
             sandbox_id,
             runtime_dir,
@@ -155,7 +158,8 @@ impl WorkspaceStore {
         let sandbox_id = Uuid::new_v4();
         let root_dir = self.runs_dir().join(sandbox_id.to_string());
         let runtime_dir = root_dir.join("runtime");
-        let vsock_socket = PathBuf::from(format!("/tmp/asb-{}.sock", sandbox_id.simple()));
+        create_private_dir(&self.vsock_dir()).await?;
+        let vsock_socket = self.vsock_socket_path(sandbox_id);
         if fs::try_exists(&run.root_dir)
             .await
             .map_err(|error| SandboxError::io("checking recycled run root", error))?
@@ -213,6 +217,22 @@ impl WorkspaceStore {
 
     fn runs_dir(&self) -> PathBuf {
         self.state_dir.join("runs")
+    }
+
+    fn vsock_dir(&self) -> PathBuf {
+        #[cfg(unix)]
+        {
+            PathBuf::from(format!("/tmp/sagens-vsock-{}", unsafe { libc::geteuid() }))
+        }
+        #[cfg(not(unix))]
+        {
+            self.state_dir.join("vsock")
+        }
+    }
+
+    fn vsock_socket_path(&self, sandbox_id: Uuid) -> PathBuf {
+        self.vsock_dir()
+            .join(format!("{}.sock", sandbox_id.simple()))
     }
 
     fn workspace_dir(&self, workspace_id: &str) -> PathBuf {
@@ -279,22 +299,7 @@ fn resize_file_len(disk_path: &Path, size_mib: u64) -> Result<()> {
 }
 
 async fn create_private_dir(path: &Path) -> Result<()> {
-    fs::create_dir_all(path)
-        .await
-        .map_err(|error| SandboxError::io("creating runtime state directory", error))?;
-    set_private_permissions(path).await
-}
-
-async fn set_private_permissions(path: &Path) -> Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
-            .await
-            .map_err(|error| SandboxError::io("setting runtime directory permissions", error))?;
-    }
-    Ok(())
+    ensure_private_dir(path, "creating runtime state directory")
 }
 
 fn resize_ext4_commands(disk_path: &Path, size_mib: u64) -> Vec<(String, Vec<String>)> {
@@ -327,5 +332,35 @@ pub(super) fn now_ms() -> u64 {
     match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(duration) => duration.as_millis() as u64,
         Err(_) => 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::tempdir;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn prepare_run_uses_short_private_vsock_socket_path() {
+        let temp = tempdir().expect("tempdir");
+        let store = WorkspaceStore::new(temp.path(), WorkspaceConfig { disk_size_mib: 64 });
+
+        let run = store.prepare_run().await.expect("prepare run");
+
+        assert!(run.vsock_socket.as_os_str().len() < 100);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let socket_path = run.vsock_socket.display().to_string();
+            assert!(socket_path.starts_with("/tmp/sagens-vsock-"));
+            let mode = std::fs::metadata(run.vsock_socket.parent().expect("vsock dir"))
+                .expect("vsock dir metadata")
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o700);
+        }
     }
 }

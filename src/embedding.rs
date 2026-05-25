@@ -7,6 +7,7 @@ use std::time::Duration;
 use tokio::sync::oneshot;
 
 use crate::auth::{AdminCredential, AdminStore, BoxCredentialStore, UserConfig, write_user_config};
+use crate::backend::libkrun;
 use crate::boxes::{BoxManager, LocalBoxService};
 use crate::runtime::{AgentSandboxService, SandboxService};
 use crate::sagens::config::{build_runtime_config_for_endpoint, validate_host_process_binary};
@@ -117,6 +118,7 @@ async fn run_embedded_daemon(
         .map_err(|error| SandboxError::io("discovering host process executable", error))?;
     validate_host_process_binary(&host_binary)?;
     let runtime_config = build_runtime_config_for_endpoint(&config.state_dir, &config.endpoint)?;
+    libkrun::preflight_secure_runner(&host_binary, &runtime_config).await?;
     let runtime: Arc<dyn SandboxService> =
         Arc::new(AgentSandboxService::new(runtime_config.clone()).await?);
     let service: Arc<dyn BoxManager> = Arc::new(
@@ -132,12 +134,13 @@ async fn run_embedded_daemon(
     let admin_store = Arc::new(AdminStore::new(&runtime_config.state_dir));
     let box_credential_store = Arc::new(BoxCredentialStore::new(&runtime_config.state_dir));
     bootstrap_admin(&admin_store, &config.admin_credential).await?;
+    let image_api = crate::box_api::ImageApiConfig::from_runtime_config(&runtime_config).await?;
     let server = serve_box_api_websocket(
         runtime_config.control.bind_addr,
         service,
         admin_store,
         box_credential_store,
-        runtime_config.isolation_mode,
+        image_api,
     )
     .await?;
     let user_config = UserConfig {

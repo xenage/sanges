@@ -7,6 +7,7 @@ import {
   CompletedExecution,
   ExecExit,
   FileNode,
+  VmImageManifest,
   ReadFileResult,
   UserConfig,
   WorkspaceCheckpointRecord
@@ -41,6 +42,7 @@ export function boxRecordFromWire(raw: Record<string, unknown>): BoxRecord {
   return {
     boxId: stringValue(raw.box_id),
     name: optionalString(raw.name),
+    image: optionalString(raw.image) ?? "base",
     status: stringValue(raw.status) as BoxRecord["status"],
     settings: raw.settings ? boxSettingsFromWire(objectValue(raw.settings)) : null,
     runtimeUsage: raw.runtime_usage
@@ -52,6 +54,23 @@ export function boxRecordFromWire(raw: Record<string, unknown>): BoxRecord {
     lastStartAtMs: optionalNumber(raw.last_start_at_ms),
     lastStopAtMs: optionalNumber(raw.last_stop_at_ms),
     lastError: optionalString(raw.last_error)
+  };
+}
+
+export function imageManifestFromWire(raw: Record<string, unknown>): VmImageManifest {
+  return {
+    version: numberValue(raw.version),
+    name: stringValue(raw.name),
+    arch: stringValue(raw.arch),
+    alpineVersion: stringValue(raw.alpine_version),
+    createdAtMs: numberValue(raw.created_at_ms),
+    apk: stringArray(raw.apk),
+    pip: stringArray(raw.pip),
+    npm: stringArray(raw.npm),
+    kernelImage: stringValue(raw.kernel_image),
+    rootfsImage: stringValue(raw.rootfs_image),
+    cacheImage: optionalString(raw.cache_image),
+    packageCount: numberValue(raw.package_count)
   };
 }
 
@@ -179,6 +198,10 @@ function arrayValue(value: unknown): unknown[] {
     throw new TypeError("expected array value");
   }
   return value;
+}
+
+function stringArray(value: unknown): string[] {
+  return arrayValue(value).map(stringValue);
 }
 
 function booleanValue(value: unknown): boolean {

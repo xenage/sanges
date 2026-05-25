@@ -19,6 +19,7 @@ const KRUN_DISK_FORMAT_RAW: u32 = 0;
 const KRUN_SYNC_RELAXED: u32 = 1;
 const KRUN_LOG_LEVEL_TRACE: u32 = 5;
 const KRUN_LOG_STYLE_NEVER: u32 = 2;
+const KRUN_TSI_DISABLED: u32 = 0;
 type KrunFn0 = unsafe extern "C" fn() -> i32;
 type KrunInitLog = unsafe extern "C" fn(i32, u32, u32, u32) -> i32;
 
@@ -40,6 +41,11 @@ impl Libkrun {
         init_log_once(&KRUN_LOG_INIT, krun::krun_init_log)?;
         let ctx = call_ctx(krun::krun_create_ctx, "krun_create_ctx")?;
         let rootfs = to_cstring(&config.rootfs_image)?;
+        let cache = config
+            .cache_image
+            .as_ref()
+            .map(|path| to_cstring(path))
+            .transpose()?;
         let workspace = to_cstring(&config.workspace_image)?;
         let vsock_socket = to_cstring(&config.vsock_socket)?;
         let console_output = to_cstring(&config.console_output_path)?;
@@ -60,8 +66,14 @@ impl Libkrun {
             krun::krun_disable_implicit_vsock(ctx),
             "krun_disable_implicit_vsock",
         )?;
-        unsafe { self.configure_direct_kernel_guest(ctx, config, &rootfs, &workspace) }?;
-        call(krun::krun_add_vsock(ctx, 0), "krun_add_vsock")?;
+        unsafe {
+            self.configure_direct_kernel_guest(ctx, config, &rootfs, cache.as_ref(), &workspace)
+        }?;
+        // Keep guest RPC on vsock without enabling libkrun's TSI socket hijacking paths.
+        call(
+            krun::krun_add_vsock(ctx, KRUN_TSI_DISABLED),
+            "krun_add_vsock",
+        )?;
         call(
             unsafe {
                 krun::krun_add_vsock_port2(
@@ -88,6 +100,7 @@ impl Libkrun {
         ctx: u32,
         config: &LibkrunRunnerConfig,
         rootfs: &CString,
+        cache: Option<&CString>,
         workspace: &CString,
     ) -> Result<()> {
         let rootfs_id = CString::new("rootfs").expect("static");
@@ -148,6 +161,23 @@ impl Libkrun {
             },
             "krun_add_disk3(workspace)",
         )?;
+        if let Some(cache) = cache {
+            let cache_id = CString::new("cache").expect("static");
+            call(
+                unsafe {
+                    krun::krun_add_disk3(
+                        ctx,
+                        cache_id.as_ptr().cast(),
+                        cache.as_ptr().cast(),
+                        KRUN_DISK_FORMAT_RAW,
+                        true,
+                        false,
+                        KRUN_SYNC_RELAXED,
+                    )
+                },
+                "krun_add_disk3(cache)",
+            )?;
+        }
         call(
             unsafe {
                 krun::krun_set_root_disk_remount(

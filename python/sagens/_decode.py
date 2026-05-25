@@ -20,6 +20,7 @@ from ._models import (
     ManagedDaemonStartInfo,
     ReadFileResult,
     UserConfig,
+    VmImageManifest,
     WorkspaceChange,
     WorkspaceChangeKind,
     WorkspaceCheckpointRecord,
@@ -57,6 +58,7 @@ def box_record_from_dict(raw: dict) -> BoxRecord:
     return BoxRecord(
         box_id=UUID(raw["box_id"]),
         name=raw.get("name"),
+        image=raw.get("image", "base"),
         status=BoxStatus(raw["status"]),
         settings=box_settings_from_dict(raw["settings"]) if raw.get("settings") else None,
         runtime_usage=(
@@ -70,6 +72,23 @@ def box_record_from_dict(raw: dict) -> BoxRecord:
         last_start_at_ms=raw.get("last_start_at_ms"),
         last_stop_at_ms=raw.get("last_stop_at_ms"),
         last_error=raw.get("last_error"),
+    )
+
+
+def image_manifest_from_dict(raw: dict) -> VmImageManifest:
+    return VmImageManifest(
+        version=raw["version"],
+        name=raw["name"],
+        arch=raw["arch"],
+        alpine_version=raw["alpine_version"],
+        created_at_ms=raw["created_at_ms"],
+        apk=list(raw.get("apk", [])),
+        pip=list(raw.get("pip", [])),
+        npm=list(raw.get("npm", [])),
+        kernel_image=raw["kernel_image"],
+        rootfs_image=raw["rootfs_image"],
+        cache_image=raw.get("cache_image"),
+        package_count=raw["package_count"],
     )
 
 

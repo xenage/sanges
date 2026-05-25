@@ -31,6 +31,11 @@ pub(super) fn parse_help_topic(args: &[String]) -> Result<HelpTopic> {
         ["admin"] => HelpTopic::Admin,
         ["admin", "add"] => HelpTopic::AdminAdd,
         ["admin", "remove", "me"] => HelpTopic::AdminRemoveMe,
+        ["image"] => HelpTopic::Image,
+        ["image", "build"] => HelpTopic::ImageBuild,
+        ["image", "list"] => HelpTopic::ImageList,
+        ["image", "inspect"] => HelpTopic::ImageInspect,
+        ["image", "rm"] => HelpTopic::ImageRemove,
         ["box"] => HelpTopic::Box,
         ["box", "list"] | ["box", "ps"] => HelpTopic::BoxList,
         ["box", "new"] => HelpTopic::BoxNew,
@@ -71,9 +76,16 @@ pub(super) fn render_usage_hint(topic: HelpTopic) -> String {
         HelpTopic::Admin => "usage: sagens admin <add|remove me>".into(),
         HelpTopic::AdminAdd => "usage: sagens admin add".into(),
         HelpTopic::AdminRemoveMe => "usage: sagens admin remove me".into(),
+        HelpTopic::Image => "usage: sagens image <build|list|inspect|rm>".into(),
+        HelpTopic::ImageBuild => {
+            "usage: sagens image build <NAME> [--apk PKG]... [--pip REQ]... [--npm PKG]... [--min-image-mib N] [--force-refresh]".into()
+        }
+        HelpTopic::ImageList => "usage: sagens image list".into(),
+        HelpTopic::ImageInspect => "usage: sagens image inspect <NAME>".into(),
+        HelpTopic::ImageRemove => "usage: sagens image rm <NAME>".into(),
         HelpTopic::Box => "usage: sagens box <list|new|start|stop|rm|set|exec|fs|checkpoint>".into(),
         HelpTopic::BoxList => "usage: sagens box list".into(),
-        HelpTopic::BoxNew => "usage: sagens box new".into(),
+        HelpTopic::BoxNew => "usage: sagens box new [--image NAME]".into(),
         HelpTopic::BoxStart => "usage: sagens box start <BOX_ID>".into(),
         HelpTopic::BoxStop => "usage: sagens box stop <BOX_ID>".into(),
         HelpTopic::BoxRemove => "usage: sagens box rm <BOX_ID>".into(),
@@ -108,7 +120,7 @@ pub(super) fn render_usage_hint(topic: HelpTopic) -> String {
 }
 
 pub(super) fn short_usage() -> &'static str {
-    "usage: sagens <start|quit|update|daemon|admin|box> [args]"
+    "usage: sagens <start|quit|update|daemon|admin|image|box> [args]"
 }
 
 fn render_page(theme: &Theme, page: PageSpec<'_>) -> String {

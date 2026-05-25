@@ -1,6 +1,7 @@
 mod support;
 
 use sagens_host::ExecExit;
+use sagens_host::workspace::MAX_READ_FILE_BYTES;
 
 use support::{create_box, spawn_client, start_box};
 
@@ -35,4 +36,14 @@ async fn websocket_contract_preserves_exec_and_file_flow() {
         .await
         .expect("read");
     assert_eq!(String::from_utf8_lossy(&file.data), "hello websocket");
+
+    let oversized = client
+        .read_file(
+            box_id,
+            "/workspace/tracked.txt".into(),
+            usize::try_from(MAX_READ_FILE_BYTES).expect("usize limit") + 1,
+        )
+        .await
+        .expect_err("oversized read must fail");
+    assert!(oversized.to_string().contains("must not exceed"));
 }

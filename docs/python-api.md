@@ -29,6 +29,10 @@ with TemporaryDirectory() as state_dir:
 - `Daemon.connect(endpoint, admin_uuid, admin_token)` connects to an existing daemon.
 - `Daemon.from_config(path)` reads a saved user config and connects.
 - `daemon.create_box()` creates a durable BOX and returns `Box`.
+- `daemon.build_image(name, apk=[...], pip=[...], npm=[...])` builds a named image through the daemon.
+- `daemon.list_images()` returns image manifests.
+- `daemon.inspect_image(name)` returns one image manifest.
+- `daemon.remove_image(name)` removes a named image.
 - `daemon.list_boxes()` returns `list[BoxRecord]`.
 - `daemon.get_box(box_id)` returns `Box`.
 - `daemon.close()` closes the client and managed process handle.
@@ -50,6 +54,22 @@ with TemporaryDirectory() as state_dir:
 - `box.checkpoint` exposes checkpoint helpers.
 
 `BoxApiClient` is the lower-level API used by `Daemon` and `Box`. Use it directly when you already have credentials or need to build your own wrapper.
+
+## Named Images
+
+Named images preinstall packages into a reusable rootfs and package cache. New BOXes can then start from that image by name.
+
+```python
+image = daemon.build_image(
+    "chromium",
+    apk=["chromium"],
+    min_image_mib=1024,
+)
+
+box = daemon.create_box(image=image.name)
+```
+
+The same methods are available on `BoxApiClient` as `build_image`, `list_images`, `inspect_image`, and `remove_image`.
 
 ## Settings
 
@@ -74,6 +94,7 @@ box.start()
 Most return values are frozen dataclasses from `sagens._models`.
 
 - `BoxRecord`: `box_id`, `name`, `status`, `settings`, `runtime_usage`, `workspace_path`, timestamps, and `last_error`.
+- `VmImageManifest`: image name, architecture, package lists, rootfs path, cache path, and package count.
 - `BoxSettings`: `cpu_cores`, `memory_mb`, `fs_size_mib`, `max_processes`, `network_enabled`.
 - `BoxNumericSetting`: `current`, `max`.
 - `BoxBooleanSetting`: `current`, `max`.

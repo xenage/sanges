@@ -20,8 +20,8 @@ from sagens import _rust
 
 
 @contextmanager
-def smoke_server(mode: str = "compat") -> Iterator[Daemon]:
-    handle = _rust.start_test_server(mode)
+def smoke_server() -> Iterator[Daemon]:
+    handle = _rust.start_test_server()
     daemon = Daemon.connect(**_config_kwargs(handle.user_config_json))
     try:
         yield daemon
@@ -36,6 +36,10 @@ def real_daemon() -> Iterator[Daemon]:
         state_dir = Path(temp_dir)
         config_path = state_dir / "config.json"
         host_binary = resolve_host_binary()
+        previous_mode = os.environ.get("SAGENS_ISOLATION_MODE")
+        previous_compat = os.environ.get("SAGENS_INSECURE_COMPAT")
+        os.environ["SAGENS_ISOLATION_MODE"] = "compat"
+        os.environ["SAGENS_INSECURE_COMPAT"] = "1"
         daemon = Daemon.start(
             host_binary=host_binary,
             state_dir=state_dir,
@@ -46,6 +50,14 @@ def real_daemon() -> Iterator[Daemon]:
         finally:
             daemon.quit()
             daemon.close()
+            if previous_mode is None:
+                os.environ.pop("SAGENS_ISOLATION_MODE", None)
+            else:
+                os.environ["SAGENS_ISOLATION_MODE"] = previous_mode
+            if previous_compat is None:
+                os.environ.pop("SAGENS_INSECURE_COMPAT", None)
+            else:
+                os.environ["SAGENS_INSECURE_COMPAT"] = previous_compat
 
 
 @contextmanager

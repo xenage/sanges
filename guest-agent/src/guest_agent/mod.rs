@@ -2,6 +2,7 @@ mod bootstrap;
 mod fs;
 mod linux_boot;
 mod linux_exec;
+mod linux_seccomp;
 mod linux_server;
 mod pty;
 mod rpc;

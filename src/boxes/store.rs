@@ -116,7 +116,7 @@ mod tests {
     use uuid::Uuid;
 
     use super::{BoxRecord, BoxStore};
-    use crate::boxes::{BoxRuntimeUsage, BoxStatus};
+    use crate::boxes::{BoxRuntimeUsage, BoxSettings, BoxStatus};
 
     #[tokio::test]
     async fn writes_and_reads_box_records() {
@@ -125,8 +125,9 @@ mod tests {
         let record = BoxRecord {
             box_id: Uuid::new_v4(),
             name: None,
+            image: crate::images::BASE_IMAGE_NAME.into(),
             status: BoxStatus::Created,
-            settings: None,
+            settings: BoxSettings::default(),
             runtime_usage: None,
             workspace_path: temp.path().join("workspace.raw"),
             active_sandbox_id: None,
@@ -148,8 +149,9 @@ mod tests {
         let record = BoxRecord {
             box_id: Uuid::new_v4(),
             name: None,
+            image: crate::images::BASE_IMAGE_NAME.into(),
             status: BoxStatus::Running,
-            settings: None,
+            settings: BoxSettings::default(),
             runtime_usage: Some(BoxRuntimeUsage {
                 cpu_millicores: 250,
                 memory_used_mib: 128,
@@ -177,8 +179,9 @@ mod tests {
         let record = BoxRecord {
             box_id: Uuid::new_v4(),
             name: None,
+            image: crate::images::BASE_IMAGE_NAME.into(),
             status: BoxStatus::Created,
-            settings: None,
+            settings: BoxSettings::default(),
             runtime_usage: None,
             workspace_path: temp.path().join("workspace.raw"),
             active_sandbox_id: None,

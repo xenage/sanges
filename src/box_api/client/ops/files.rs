@@ -34,7 +34,7 @@ impl BoxApiClient {
                 request_id,
                 box_id,
                 path,
-                limit,
+                limit: limit as u64,
             },
             |response| match response {
                 BoxResponse::File { file } => Some(file),

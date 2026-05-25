@@ -2,6 +2,8 @@ mod support;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod host_e2e {
+    use std::io::ErrorKind;
+    use std::net::TcpListener;
     use std::path::Path;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -38,39 +40,40 @@ mod host_e2e {
             GuestKernelFormat::default_for_host(),
         );
         let state_dir = state_dir();
+        let runtime_config = RuntimeConfig {
+            state_dir: state_dir.clone(),
+            guest: GuestConfig {
+                kernel_image: guest_assets.kernel_image,
+                kernel_format: guest_kernel_format,
+                rootfs_image: guest_assets.rootfs_image,
+                firmware: guest_assets.firmware,
+                guest_agent_path: env("SAGENS_GUEST_AGENT_PATH")
+                    .unwrap_or_else(|| "/usr/local/bin/sagens-guest-agent".into())
+                    .into(),
+                guest_vsock_port: 11_000,
+                boot_timeout: Duration::from_secs(30),
+                guest_uid: compat_guest_uid(),
+                guest_gid: compat_guest_gid(),
+                guest_tmpfs_mib: 64,
+            },
+            workspace: WorkspaceConfig { disk_size_mib: 128 },
+            control: ControlPlaneConfig::default(),
+            lifecycle: LifecycleConfig::default(),
+            isolation_mode: IsolationMode::Compat,
+            hardening: HardeningConfig {
+                enable_landlock: false,
+                cgroup_parent: None,
+                runner_log_limit_bytes: 4 * 1024 * 1024,
+            },
+            artifact_bundle: ArtifactBundle {
+                bundle_id: "e2e".into(),
+            },
+            default_policy: SandboxPolicy::default(),
+        };
         let runtime: Arc<dyn SandboxService> = Arc::new(
-            AgentSandboxService::new(RuntimeConfig {
-                state_dir: state_dir.clone(),
-                guest: GuestConfig {
-                    kernel_image: guest_assets.kernel_image,
-                    kernel_format: guest_kernel_format,
-                    rootfs_image: guest_assets.rootfs_image,
-                    firmware: guest_assets.firmware,
-                    guest_agent_path: env("SAGENS_GUEST_AGENT_PATH")
-                        .unwrap_or_else(|| "/usr/local/bin/sagens-guest-agent".into())
-                        .into(),
-                    guest_vsock_port: 11_000,
-                    boot_timeout: Duration::from_secs(30),
-                    guest_uid: 65_534,
-                    guest_gid: 65_534,
-                    guest_tmpfs_mib: 64,
-                },
-                workspace: WorkspaceConfig { disk_size_mib: 128 },
-                control: ControlPlaneConfig::default(),
-                lifecycle: LifecycleConfig::default(),
-                isolation_mode: IsolationMode::Compat,
-                hardening: HardeningConfig {
-                    enable_landlock: false,
-                    cgroup_parent: None,
-                    runner_log_limit_bytes: 4 * 1024 * 1024,
-                },
-                artifact_bundle: ArtifactBundle {
-                    bundle_id: "e2e".into(),
-                },
-                default_policy: SandboxPolicy::default(),
-            })
-            .await
-            .expect("runtime"),
+            AgentSandboxService::new(runtime_config.clone())
+                .await
+                .expect("runtime"),
         );
         let service: Arc<dyn BoxManager> = Arc::new(
             LocalBoxService::new(
@@ -95,7 +98,9 @@ mod host_e2e {
             service,
             admin_store,
             box_credential_store,
-            IsolationMode::Compat,
+            sagens_host::ImageApiConfig::from_runtime_config(&runtime_config)
+                .await
+                .expect("image api config"),
         )
         .await
         .expect("server");
@@ -155,5 +160,56 @@ mod host_e2e {
         let stdout = String::from_utf8_lossy(&verify.stdout);
         assert!(stdout.contains("persisted"));
         assert!(stdout.contains("colorama"));
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind host listener");
+        listener
+            .set_nonblocking(true)
+            .expect("set nonblocking listener");
+        let port = listener.local_addr().expect("listener addr").port();
+        let network = client
+            .exec_python_capture(
+                box_id,
+                vec![
+                    "-c".into(),
+                    r#"import socket, sys
+port = int(sys.argv[1])
+checks = [
+    ("connect", lambda: socket.create_connection(("127.0.0.1", port), timeout=1)),
+    ("bind", lambda: socket.socket(socket.AF_INET, socket.SOCK_STREAM).bind(("127.0.0.1", 0))),
+]
+for label, attempt in checks:
+    try:
+        sock = attempt()
+    except OSError as exc:
+        print(f"{label}:blocked:{exc.errno}")
+    else:
+        try:
+            print(f"{label}:unexpected-success")
+        finally:
+            sock.close()
+        raise SystemExit(90)
+"#
+                    .into(),
+                    port.to_string(),
+                ],
+            )
+            .await
+            .expect("network probe");
+        assert_eq!(network.exit_status, ExecExit::Success);
+        let network_stdout = String::from_utf8_lossy(&network.stdout);
+        assert!(network_stdout.contains("connect:blocked"));
+        assert!(network_stdout.contains("bind:blocked"));
+        let accept_error = listener
+            .accept()
+            .expect_err("guest network should not reach host");
+        assert_eq!(accept_error.kind(), ErrorKind::WouldBlock);
+    }
+
+    fn compat_guest_uid() -> u32 {
+        if cfg!(target_os = "macos") { 0 } else { 65_534 }
+    }
+
+    fn compat_guest_gid() -> u32 {
+        if cfg!(target_os = "macos") { 0 } else { 65_534 }
     }
 }

@@ -1,15 +1,22 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use uuid::Uuid;
+
+#[cfg(test)]
+mod tests;
 
 use super::AgentSandboxService;
 use crate::backend::BackendLaunchRequest;
 use crate::config::{IsolationMode, SandboxSpec};
 use crate::guest_rpc::GuestRpcClient;
 use crate::host_log;
+use crate::images::ImageStore;
 use crate::runtime::registry::ManagedSandbox;
 use crate::runtime::{SandboxSessionRecord, SandboxSessionState, SandboxSessionSummary};
+use crate::workspace::WorkspaceSnapshot;
 use crate::{Result, SandboxError};
+
+const GUEST_STOP_RPC_TIMEOUT: Duration = Duration::from_secs(5);
 
 impl AgentSandboxService {
     pub(super) async fn create_sandbox_inner(
@@ -33,6 +40,8 @@ impl AgentSandboxService {
                 .await?;
         }
         let workspace = self.workspace.prepare_workspace(&spec.workspace_id).await?;
+        let image = ImageStore::new(&self.config.state_dir)
+            .resolve_guest(&spec.image, &self.config.guest)?;
         let run_layout = match self.registry.take_warm_run().await {
             Some(run_layout) => self.workspace.recycle_run(run_layout).await?,
             None => self.workspace.prepare_run().await?,
@@ -53,7 +62,8 @@ impl AgentSandboxService {
             .launch(BackendLaunchRequest {
                 sandbox_id: run_layout.sandbox_id,
                 run_layout: run_layout.clone(),
-                guest: self.config.guest.clone(),
+                guest: image.guest,
+                cache_image: image.cache_image,
                 policy: spec.policy,
                 workspace: workspace.clone(),
                 hardening: self.config.hardening.clone(),
@@ -136,8 +146,8 @@ impl AgentSandboxService {
                 session.run_layout.root_dir.display()
             ),
         );
-        let _ = session.guest.sync_workspace().await;
-        let final_snapshot = session.snapshot_for_diff().await?;
+        sync_guest_best_effort(&session.guest, sandbox_id, "before snapshot").await;
+        let final_snapshot = snapshot_guest_or_baseline(&session, sandbox_id).await;
         let changes = session.baseline.diff(&final_snapshot);
         let mut summary = session.summary.write().await;
         summary.state = SandboxSessionState::Destroyed;
@@ -147,8 +157,8 @@ impl AgentSandboxService {
             changes,
         };
         drop(summary);
-        let _ = session.guest.sync_workspace().await;
-        let _ = session.guest.shutdown().await;
+        sync_guest_best_effort(&session.guest, sandbox_id, "before shutdown").await;
+        shutdown_guest_best_effort(&session.guest, sandbox_id).await;
         session.backend.shutdown().await?;
         self.registry
             .store_warm_run(
@@ -215,6 +225,57 @@ fn log_launch_failure(
     );
 }
 
+async fn sync_guest_best_effort(guest: &GuestRpcClient, sandbox_id: Uuid, phase: &str) {
+    match tokio::time::timeout(GUEST_STOP_RPC_TIMEOUT, guest.sync_workspace()).await {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => host_log::emit(
+            "runtime",
+            format!("guest sync failed sandbox_id={sandbox_id} phase={phase} error={error}"),
+        ),
+        Err(_) => host_log::emit(
+            "runtime",
+            format!("guest sync timed out sandbox_id={sandbox_id} phase={phase}"),
+        ),
+    }
+}
+
+async fn snapshot_guest_or_baseline(
+    session: &ManagedSandbox,
+    sandbox_id: Uuid,
+) -> WorkspaceSnapshot {
+    match tokio::time::timeout(GUEST_STOP_RPC_TIMEOUT, session.snapshot_for_diff()).await {
+        Ok(Ok(snapshot)) => snapshot,
+        Ok(Err(error)) => {
+            host_log::emit(
+                "runtime",
+                format!("guest snapshot failed sandbox_id={sandbox_id} error={error}"),
+            );
+            session.baseline.clone()
+        }
+        Err(_) => {
+            host_log::emit(
+                "runtime",
+                format!("guest snapshot timed out sandbox_id={sandbox_id}"),
+            );
+            session.baseline.clone()
+        }
+    }
+}
+
+async fn shutdown_guest_best_effort(guest: &GuestRpcClient, sandbox_id: Uuid) {
+    match tokio::time::timeout(GUEST_STOP_RPC_TIMEOUT, guest.shutdown()).await {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => host_log::emit(
+            "runtime",
+            format!("guest shutdown failed sandbox_id={sandbox_id} error={error}"),
+        ),
+        Err(_) => host_log::emit(
+            "runtime",
+            format!("guest shutdown timed out sandbox_id={sandbox_id}"),
+        ),
+    }
+}
+
 fn enrich_launch_error(
     run_layout: &crate::workspace::RunLayout,
     stage: &str,
@@ -270,18 +331,18 @@ const GUEST_FAILURE_PATTERNS: &[&str] = &[
     "Can't open blockdev",
     "No working init found",
     "Run /init as init process",
-    "mount:",
     "EXT4-fs error",
-    "failed",
-    "error",
+    "guest agent error:",
+    "guest bootstrap failed:",
 ];
 
 const RUNNER_FAILURE_PATTERNS: &[&str] = &[
     "unexpected exception:",
     "panicked at",
     "krun_start_enter failed",
+    "Failed to create listening proxy",
     "failed with",
-    "error",
+    "CreatingSocket(",
 ];
 
 fn select_boot_failure_line(text: Option<&str>, patterns: &[&str]) -> Option<String> {
@@ -300,92 +361,4 @@ fn last_nonempty_line(text: Option<&str>) -> Option<String> {
         .map(str::trim)
         .find(|line| !line.is_empty())
         .map(str::to_owned)
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs;
-    use std::path::PathBuf;
-
-    use tempfile::tempdir;
-    use uuid::Uuid;
-
-    use super::{boot_failure_detail, enrich_launch_error};
-    use crate::{SandboxError, workspace::RunLayout};
-
-    fn run_layout(root_dir: PathBuf) -> RunLayout {
-        RunLayout {
-            sandbox_id: Uuid::new_v4(),
-            root_dir: root_dir.clone(),
-            runtime_dir: root_dir.join("runtime"),
-            runner_config: root_dir.join("runner-config.json"),
-            runner_log: root_dir.join("libkrun-runner.log"),
-            guest_console_log: root_dir.join("guest-console.log"),
-            vsock_socket: root_dir.join("guest.sock"),
-        }
-    }
-
-    #[test]
-    fn prefers_kernel_panic_from_guest_console() {
-        let temp = tempdir().expect("tempdir");
-        let run_layout = run_layout(temp.path().to_path_buf());
-        fs::write(
-            &run_layout.guest_console_log,
-            "booting\nKernel panic - not syncing: VFS: Unable to mount root fs on unknown-block(254,0)\n",
-        )
-        .expect("write guest console");
-        fs::write(
-            &run_layout.runner_log,
-            "thread 'fc_vcpu 0' panicked at unexpected exception: 0x20\n",
-        )
-        .expect("write runner log");
-
-        let detail = boot_failure_detail(&run_layout).expect("detail");
-
-        assert_eq!(
-            detail,
-            "Kernel panic - not syncing: VFS: Unable to mount root fs on unknown-block(254,0)"
-        );
-    }
-
-    #[test]
-    fn falls_back_to_runner_log_when_guest_console_is_empty() {
-        let temp = tempdir().expect("tempdir");
-        let run_layout = run_layout(temp.path().to_path_buf());
-        fs::write(&run_layout.guest_console_log, "\n").expect("write guest console");
-        fs::write(
-            &run_layout.runner_log,
-            "thread 'fc_vcpu 0' panicked at src/main.rs: unexpected exception: 0x20\n",
-        )
-        .expect("write runner log");
-
-        let detail = boot_failure_detail(&run_layout).expect("detail");
-
-        assert_eq!(
-            detail,
-            "thread 'fc_vcpu 0' panicked at src/main.rs: unexpected exception: 0x20"
-        );
-    }
-
-    #[test]
-    fn replaces_guest_connect_timeout_with_boot_detail() {
-        let temp = tempdir().expect("tempdir");
-        let run_layout = run_layout(temp.path().to_path_buf());
-        fs::write(
-            &run_layout.guest_console_log,
-            "Kernel panic - not syncing: VFS: Unable to mount root fs on unknown-block(254,0)\n",
-        )
-        .expect("write guest console");
-
-        let error = enrich_launch_error(
-            &run_layout,
-            "guest connect",
-            SandboxError::timeout("timed out waiting for guest vsock bridge"),
-        );
-
-        assert_eq!(
-            error.to_string(),
-            "backend failure: guest connect failed: Kernel panic - not syncing: VFS: Unable to mount root fs on unknown-block(254,0)"
-        );
-    }
 }

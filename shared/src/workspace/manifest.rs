@@ -2,6 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
+use crate::{Result, SandboxError};
+
+pub const MAX_READ_FILE_BYTES: u64 = 16 * 1024 * 1024;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum FileKind {
@@ -116,9 +120,25 @@ pub struct ReadFileResult {
     pub truncated: bool,
 }
 
+pub fn validate_read_limit(limit: u64) -> Result<usize> {
+    if limit > MAX_READ_FILE_BYTES {
+        return Err(SandboxError::invalid(format!(
+            "file read limit must not exceed {MAX_READ_FILE_BYTES} bytes"
+        )));
+    }
+    usize::try_from(limit).map_err(|_| {
+        SandboxError::invalid(format!(
+            "file read limit must fit into usize and not exceed {MAX_READ_FILE_BYTES} bytes"
+        ))
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{FileKind, FileNode, WorkspaceChangeKind, WorkspaceSnapshot};
+    use super::{
+        FileKind, FileNode, MAX_READ_FILE_BYTES, WorkspaceChangeKind, WorkspaceSnapshot,
+        validate_read_limit,
+    };
 
     #[test]
     fn diff_detects_modified_entries() {
@@ -139,5 +159,11 @@ mod tests {
         let diff = before.diff(&after);
         assert_eq!(diff.len(), 1);
         assert_eq!(diff[0].kind, WorkspaceChangeKind::Modified);
+    }
+
+    #[test]
+    fn rejects_oversized_read_limit() {
+        let error = validate_read_limit(MAX_READ_FILE_BYTES + 1).expect_err("oversized limit");
+        assert!(error.to_string().contains("must not exceed"));
     }
 }

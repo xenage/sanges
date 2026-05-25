@@ -82,11 +82,7 @@ impl BoxApiClient {
         .await
     }
 
-    pub async fn connect_as_box(
-        endpoint: &str,
-        box_id: Uuid,
-        box_token: Option<String>,
-    ) -> Result<Self> {
+    pub async fn connect_as_box(endpoint: &str, box_id: Uuid, box_token: String) -> Result<Self> {
         Self::connect_with_auth(
             endpoint,
             ClientMessage::AuthenticateBox { box_id, box_token },

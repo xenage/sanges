@@ -14,6 +14,7 @@ This docs set is organized around that outcome: create a BOX for a user, run age
 - I want the fastest Python path: [Python quickstart](quickstart-python.md)
 - I want the fastest Node path: [Node quickstart](quickstart-node.md)
 - I want Python classes, types, and settings: [Python API](python-api.md)
+- I want prebuilt package images from code: [Python quickstart](quickstart-python.md#named-images), [Node quickstart](quickstart-node.md#named-images)
 - I want the public nouns in one page: [Mental model](mental-model.md)
 - I want the workspace to survive restarts: [Persistent workspaces](recipes/persistent-workspaces.md)
 - I want safe rollback and branching: [Checkpoints and forks](recipes/checkpoints-and-forks.md)
@@ -70,6 +71,8 @@ JS
 Both entry points talk to the same product model.
 
 The CLI is a direct way to operate the daemon and BOX lifecycle by hand. The Python and Node APIs are the same control plane packaged for your product backend. In every case you are creating a durable user BOX, not a throwaway shell session.
+
+Named images use that same control plane. Python and Node code can build an image once with packages such as Chromium, then create BOXes from that image without shelling out to the CLI.
 
 ## What to read next
 

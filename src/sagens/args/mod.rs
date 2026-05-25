@@ -22,6 +22,7 @@ pub enum Command {
     Update,
     Daemon(DaemonCommand),
     Admin(AdminCommand),
+    Image(ImageCommand),
     Box(BoxCommand),
 }
 
@@ -39,6 +40,11 @@ pub enum HelpTopic {
     Box,
     BoxList,
     BoxNew,
+    Image,
+    ImageBuild,
+    ImageList,
+    ImageInspect,
+    ImageRemove,
     BoxStart,
     BoxStop,
     BoxRemove,
@@ -73,7 +79,7 @@ pub struct DaemonLogCommand {
 
 pub enum BoxCommand {
     List,
-    New,
+    New(BoxNewCommand),
     Start(Uuid),
     Stop(Uuid),
     Remove(Uuid),
@@ -81,6 +87,26 @@ pub enum BoxCommand {
     Exec(ExecCommand),
     Fs(FsCommand),
     Checkpoint(CheckpointCommand),
+}
+
+pub struct BoxNewCommand {
+    pub image: Option<String>,
+}
+
+pub enum ImageCommand {
+    Build(ImageBuildCommand),
+    List,
+    Inspect { name: String },
+    Remove { name: String },
+}
+
+pub struct ImageBuildCommand {
+    pub name: String,
+    pub apk: Vec<String>,
+    pub pip: Vec<String>,
+    pub npm: Vec<String>,
+    pub min_image_mib: u64,
+    pub force_refresh: bool,
 }
 
 pub struct BoxSetCommand {

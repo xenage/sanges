@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use sagens_host::boxes::{BoxRecord, BoxStatus};
+use sagens_host::boxes::{BoxRecord, BoxSettings, BoxStatus};
 use sagens_host::workspace::{FileKind, FileNode, WorkspaceChange, WorkspaceChangeKind};
 use uuid::Uuid;
 
@@ -10,8 +10,9 @@ pub(super) fn new_box_record(name: Option<String>) -> BoxRecord {
     BoxRecord {
         box_id: Uuid::new_v4(),
         name,
+        image: sagens_host::images::BASE_IMAGE_NAME.into(),
         status: BoxStatus::Created,
-        settings: None,
+        settings: BoxSettings::default(),
         runtime_usage: None,
         workspace_path: "/tmp/workspace.raw".into(),
         active_sandbox_id: None,

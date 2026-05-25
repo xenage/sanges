@@ -97,6 +97,7 @@ class BoxRuntimeUsage:
 class BoxRecord:
     box_id: UUID
     name: str | None
+    image: str
     status: BoxStatus
     settings: BoxSettings | None
     runtime_usage: BoxRuntimeUsage | None
@@ -106,6 +107,22 @@ class BoxRecord:
     last_start_at_ms: int | None
     last_stop_at_ms: int | None
     last_error: str | None
+
+
+@dataclass(frozen=True)
+class VmImageManifest:
+    version: int
+    name: str
+    arch: str
+    alpine_version: str
+    created_at_ms: int
+    apk: list[str]
+    pip: list[str]
+    npm: list[str]
+    kernel_image: str
+    rootfs_image: str
+    cache_image: str | None
+    package_count: int
 
 
 @dataclass(frozen=True)

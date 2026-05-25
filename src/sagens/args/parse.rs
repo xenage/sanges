@@ -5,7 +5,10 @@ use super::parse_box::{
     parse_box_checkpoint, parse_box_exec, parse_box_remove, parse_box_set, parse_box_start,
     parse_box_stop,
 };
-use super::{AdminCommand, BoxCommand, Command, DaemonCommand, DaemonLogCommand, HelpTopic};
+use super::{
+    AdminCommand, BoxCommand, BoxNewCommand, Command, DaemonCommand, DaemonLogCommand, HelpTopic,
+    ImageBuildCommand, ImageCommand,
+};
 
 pub fn parse(mut args: Vec<String>) -> Result<Command> {
     if args.is_empty() {
@@ -18,6 +21,7 @@ pub fn parse(mut args: Vec<String>) -> Result<Command> {
         "update" => parse_leaf(args, HelpTopic::Update, Command::Update),
         "daemon" => parse_daemon(args),
         "admin" => parse_admin(args),
+        "image" => parse_image(args),
         "box" => parse_box(args),
         other => Err(SandboxError::invalid(format!(
             "unknown command {other}\n\n{}",
@@ -131,10 +135,7 @@ fn parse_box(mut args: Vec<String>) -> Result<Command> {
             ensure_no_extra_args(&args, HelpTopic::BoxList)?;
             Ok(Command::Box(BoxCommand::List))
         }
-        "new" => {
-            ensure_no_extra_args(&args, HelpTopic::BoxNew)?;
-            Ok(Command::Box(BoxCommand::New))
-        }
+        "new" => parse_box_new(args),
         "start" => parse_box_start(args),
         "stop" => parse_box_stop(args),
         "rm" => parse_box_remove(args),
@@ -147,6 +148,109 @@ fn parse_box(mut args: Vec<String>) -> Result<Command> {
             render_usage_hint(HelpTopic::Box)
         ))),
     }
+}
+
+fn parse_image(mut args: Vec<String>) -> Result<Command> {
+    if args.is_empty() || help_only(&args) {
+        return Ok(Command::Help(HelpTopic::Image));
+    }
+    match args.remove(0).as_str() {
+        "build" => parse_image_build(args),
+        "list" => {
+            ensure_no_extra_args(&args, HelpTopic::ImageList)?;
+            Ok(Command::Image(ImageCommand::List))
+        }
+        "inspect" => {
+            if help_only(&args) {
+                return Ok(Command::Help(HelpTopic::ImageInspect));
+            }
+            Ok(Command::Image(ImageCommand::Inspect {
+                name: single_arg(args, render_usage_hint(HelpTopic::ImageInspect).as_str())?,
+            }))
+        }
+        "rm" => {
+            if help_only(&args) {
+                return Ok(Command::Help(HelpTopic::ImageRemove));
+            }
+            Ok(Command::Image(ImageCommand::Remove {
+                name: single_arg(args, render_usage_hint(HelpTopic::ImageRemove).as_str())?,
+            }))
+        }
+        other => Err(SandboxError::invalid(format!(
+            "unknown image command {other}\n\n{}",
+            render_usage_hint(HelpTopic::Image)
+        ))),
+    }
+}
+
+fn parse_image_build(mut args: Vec<String>) -> Result<Command> {
+    if args.is_empty() || help_only(&args) {
+        return Ok(Command::Help(HelpTopic::ImageBuild));
+    }
+    let name = single_arg_from(&mut args, render_usage_hint(HelpTopic::ImageBuild).as_str())?;
+    let mut apk = Vec::new();
+    let mut pip = Vec::new();
+    let mut npm = Vec::new();
+    let mut min_image_mib = 512;
+    let mut force_refresh = false;
+    while !args.is_empty() {
+        match args.remove(0).as_str() {
+            "--apk" => apk.push(single_arg_from(
+                &mut args,
+                render_usage_hint(HelpTopic::ImageBuild).as_str(),
+            )?),
+            "--pip" => pip.push(single_arg_from(
+                &mut args,
+                render_usage_hint(HelpTopic::ImageBuild).as_str(),
+            )?),
+            "--npm" => npm.push(single_arg_from(
+                &mut args,
+                render_usage_hint(HelpTopic::ImageBuild).as_str(),
+            )?),
+            "--min-image-mib" => {
+                let value =
+                    single_arg_from(&mut args, render_usage_hint(HelpTopic::ImageBuild).as_str())?;
+                min_image_mib = parse_mib_value("min_image_mib", &value)?;
+            }
+            "--force-refresh" => force_refresh = true,
+            other => {
+                return Err(SandboxError::invalid(format!(
+                    "unknown image build flag {other}"
+                )));
+            }
+        }
+    }
+    Ok(Command::Image(ImageCommand::Build(ImageBuildCommand {
+        name,
+        apk,
+        pip,
+        npm,
+        min_image_mib,
+        force_refresh,
+    })))
+}
+
+fn parse_box_new(mut args: Vec<String>) -> Result<Command> {
+    if help_only(&args) {
+        return Ok(Command::Help(HelpTopic::BoxNew));
+    }
+    let mut image = None;
+    while !args.is_empty() {
+        match args.remove(0).as_str() {
+            "--image" => {
+                image = Some(single_arg_from(
+                    &mut args,
+                    render_usage_hint(HelpTopic::BoxNew).as_str(),
+                )?)
+            }
+            other => {
+                return Err(SandboxError::invalid(format!(
+                    "unknown box new flag {other}"
+                )));
+            }
+        }
+    }
+    Ok(Command::Box(BoxCommand::New(BoxNewCommand { image })))
 }
 
 fn parse_box_fs(mut args: Vec<String>) -> Result<Command> {
@@ -227,6 +331,31 @@ pub(super) fn single_arg_from(args: &mut Vec<String>, usage: &str) -> Result<Str
 pub(super) fn parse_uuid(value: String) -> Result<uuid::Uuid> {
     uuid::Uuid::parse_str(&value)
         .map_err(|error| SandboxError::invalid(format!("invalid BOX UUID {value}: {error}")))
+}
+
+fn parse_mib_value(name: &str, raw: &str) -> Result<u64> {
+    let normalized = raw.trim().replace('_', "").to_ascii_lowercase();
+    let (digits, factor) = if let Some(stripped) = normalized.strip_suffix("gib") {
+        (stripped, 1024)
+    } else if let Some(stripped) = normalized.strip_suffix("gb") {
+        (stripped, 1024)
+    } else if let Some(stripped) = normalized.strip_suffix('g') {
+        (stripped, 1024)
+    } else if let Some(stripped) = normalized.strip_suffix("mib") {
+        (stripped, 1)
+    } else if let Some(stripped) = normalized.strip_suffix("mb") {
+        (stripped, 1)
+    } else if let Some(stripped) = normalized.strip_suffix('m') {
+        (stripped, 1)
+    } else {
+        (normalized.as_str(), 1)
+    };
+    let value = digits
+        .parse::<u64>()
+        .map_err(|error| SandboxError::invalid(format!("invalid {name} value {raw}: {error}")))?;
+    value
+        .checked_mul(factor)
+        .ok_or_else(|| SandboxError::invalid(format!("{name} value {raw} is too large")))
 }
 
 pub(super) fn is_help_flag(value: &str) -> bool {

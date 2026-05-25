@@ -308,6 +308,9 @@ jobs:
 
       - name: Run macOS Python standalone daemon smoke
         if: runner.os == 'macOS'
+        env:
+          SAGENS_ISOLATION_MODE: compat
+          SAGENS_INSECURE_COMPAT: "1"
         run: |
           tmpdir="$(mktemp -d)"
           cd "$tmpdir"
@@ -328,6 +331,9 @@ jobs:
 
       - name: Run macOS Python standalone BOX smoke
         if: runner.os == 'macOS' && env.SAGENS_RUN_MACOS_REAL_BOX_SMOKE == '1'
+        env:
+          SAGENS_ISOLATION_MODE: compat
+          SAGENS_INSECURE_COMPAT: "1"
         run: |
           tmpdir="$(mktemp -d)"
           cd "$tmpdir"
@@ -390,7 +396,7 @@ jobs:
 
       - name: Build Node SDK
         run: |
-          npm ci --prefix node
+          npm ci --prefix node --omit=optional
           npm run --prefix node build
 
       - name: Pack Node packages
@@ -425,8 +431,6 @@ jobs:
             platform: linux-arm64
           - os: macos-14
             platform: darwin-arm64
-    env:
-      PACKAGE_VERSION: "0.0.0-0.3"
     steps:
       - uses: actions/checkout@v6
 
@@ -444,11 +448,12 @@ jobs:
         run: |
           tmpdir="$(mktemp -d)"
           echo "NODE_E2E_TMP=$tmpdir" >> "$GITHUB_ENV"
+          package_version="$(node -p "require('./node/package.json').version")"
           cd "$tmpdir"
           npm init -y
           npm install \
-            "$GITHUB_WORKSPACE/node-dist/xenage-sanges-${PACKAGE_VERSION}.tgz" \
-            "$GITHUB_WORKSPACE/node-dist/xenage-sanges-${{ matrix.platform }}-${PACKAGE_VERSION}.tgz"
+            "$GITHUB_WORKSPACE/node-dist/xenage-sanges-${package_version}.tgz" \
+            "$GITHUB_WORKSPACE/node-dist/xenage-sanges-${{ matrix.platform }}-${package_version}.tgz"
 
       - name: Run Node smoke
         run: |

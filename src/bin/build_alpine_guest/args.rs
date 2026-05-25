@@ -10,6 +10,7 @@ pub(super) struct Args {
     pub(super) output_dir: PathBuf,
     pub(super) guest_agent: PathBuf,
     pub(super) min_image_mib: u64,
+    pub(super) apk_packages: Vec<String>,
 }
 
 impl Args {
@@ -19,6 +20,7 @@ impl Args {
         let mut output_dir: Option<PathBuf> = None;
         let mut guest_agent = None;
         let mut min_image_mib = 256_u64;
+        let mut apk_packages = Vec::new();
 
         let mut args = env::args_os().skip(1);
         while let Some(flag) = args.next() {
@@ -27,6 +29,7 @@ impl Args {
                 "--work-dir" => work_dir = next_path(&mut args, "--work-dir")?,
                 "--output-dir" => output_dir = Some(next_path(&mut args, "--output-dir")?),
                 "--guest-agent" => guest_agent = Some(next_path(&mut args, "--guest-agent")?),
+                "--apk" => apk_packages.push(next_string(&mut args, "--apk")?),
                 "--min-image-mib" => {
                     let value = next_string(&mut args, "--min-image-mib")?;
                     min_image_mib = value
@@ -51,13 +54,14 @@ impl Args {
             output_dir: output_dir.canonicalize().unwrap_or(output_dir),
             guest_agent: guest_agent.canonicalize().unwrap_or(guest_agent),
             min_image_mib,
+            apk_packages,
         })
     }
 }
 
 fn print_help() {
     println!(
-        "usage: build-alpine-guest [--arch aarch64|x86_64] [--work-dir DIR] [--output-dir DIR] --guest-agent PATH [--min-image-mib N]"
+        "usage: build-alpine-guest [--arch aarch64|x86_64] [--work-dir DIR] [--output-dir DIR] --guest-agent PATH [--apk PKG]... [--min-image-mib N]"
     );
 }
 

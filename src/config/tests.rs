@@ -66,7 +66,7 @@ fn rejects_secure_mode_without_cgroup_parent() {
         lifecycle: LifecycleConfig::default(),
         isolation_mode: IsolationMode::Secure,
         hardening: HardeningConfig {
-            enable_landlock: false,
+            enable_landlock: true,
             cgroup_parent: None,
             runner_log_limit_bytes: 4 * 1024 * 1024,
         },
@@ -136,4 +136,32 @@ fn falls_back_when_probe_is_unknown() {
 #[test]
 fn execution_policy_defaults_to_compact_box() {
     assert_eq!(SandboxPolicy::default().memory_mb, 128);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn rejects_secure_mode_with_krun_init_boot_path() {
+    let config = RuntimeConfig {
+        state_dir: PathBuf::from("/tmp/sagens"),
+        guest: guest_config(),
+        workspace: WorkspaceConfig { disk_size_mib: 512 },
+        control: ControlPlaneConfig::default(),
+        lifecycle: LifecycleConfig::default(),
+        isolation_mode: IsolationMode::Secure,
+        hardening: HardeningConfig {
+            enable_landlock: true,
+            cgroup_parent: Some(PathBuf::from("/sys/fs/cgroup/sagens-test")),
+            runner_log_limit_bytes: 4 * 1024 * 1024,
+        },
+        artifact_bundle: ArtifactBundle::default(),
+        default_policy: SandboxPolicy::default(),
+    };
+    let error = config
+        .validate()
+        .expect_err("secure raw-kernel boot must fail");
+    assert!(
+        error
+            .to_string()
+            .contains("direct block-root guest boot path")
+    );
 }
