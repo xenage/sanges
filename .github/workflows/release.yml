@@ -375,7 +375,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
 
@@ -434,7 +434,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
 
@@ -534,7 +534,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
 
@@ -684,7 +684,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         if: steps.verify.outputs.should_release == 'true'
         with:
           node-version: "22"
